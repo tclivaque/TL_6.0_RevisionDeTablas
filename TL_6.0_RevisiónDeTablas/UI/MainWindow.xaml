@@ -1,6 +1,6 @@
-﻿<Window x:Class="TL60_RevisionDeTablas.UI.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+﻿ ```xml<Window x:Class="TL60_RevisionDeTablas.UI.MainWindow"
+        xmlns="[http://schemas.microsoft.com/winfx/2006/xaml/presentation](http://schemas.microsoft.com/winfx/2006/xaml/presentation)"
+        xmlns:x="[http://schemas.microsoft.com/winfx/2006/xaml](http://schemas.microsoft.com/winfx/2006/xaml)"
         Title="TL 6.0 - Diagnóstico de Filtros de Tablas" 
         Height="700" Width="1300"
         WindowStartupLocation="CenterScreen">
@@ -9,35 +9,33 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/> [cite: 295]
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Revisión de Filtros de Tablas de Planificación" 
                        FontSize="20" FontWeight="Bold"/>
-            <TextBlock Name="StatsText" Text="Estadísticas" Margin="0,5,0,0"/> [cite: 296]
+            <TextBlock Name="StatsText" Text="Estadísticas" Margin="0,5,0,0"/>
         </StackPanel>
 
         <DataGrid Grid.Row="1" 
                   Name="DiagnosticDataGrid"
                   AutoGenerateColumns="False"
-                  [cite_start]IsReadOnly="True" [cite: 297]
+                  IsReadOnly="True"
                   CanUserSortColumns="True"
                   SelectionMode="Single"
                   GridLinesVisibility="All">
 
             <DataGrid.Columns>
-                <DataGridTextColumn Header="#" Binding="{Binding NumeroFila}" Width="50"/> [cite: 299]
+                <DataGridTextColumn Header="#" Binding="{Binding NumeroFila}" Width="50"/>
 
-                <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80"/> [cite: 300]
-                
-                [cite: 301]
+                <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80"/>
 
-                <DataGridTextColumn Header="Assembly Code" Binding="{Binding CodigoIdentificacion}" Width="150"/> [cite: 302]
+                <DataGridTextColumn Header="Assembly Code" Binding="{Binding CodigoIdentificacion}" Width="150"/>
 
-                <DataGridTextColumn Header="Nombre de Tabla" Binding="{Binding Descripcion}" Width="250"/> [cite: 303]
+                <DataGridTextColumn Header="Nombre de Tabla" Binding="{Binding Descripcion}" Width="250"/>
 
-                <DataGridTextColumn Header="Encabezado" Binding="{Binding NombreParametro}" Width="120"/> [cite: 304]
+                <DataGridTextColumn Header="Encabezado" Binding="{Binding NombreParametro}" Width="120"/>
 
                 <DataGridTemplateColumn Header="Valor Actual" Width="250">
                     <DataGridTemplateColumn.CellTemplate>
@@ -65,38 +63,37 @@
 
             </DataGrid.Columns>
 
-            [cite: 307]
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Estado}" Value="Correcto">
-                            <Setter Property="Background" Value="#E8F5E9"/> [cite: 308]
+                            <Setter Property="Background" Value="#E8F5E9"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Estado}" Value="Corregir">
-                            <Setter Property="Background" Value="#E3F2FD"/> [cite: 309]
+                            <Setter Property="Background" Value="#E3F2FD"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Estado}" Value="Vacio">
-                            <Setter Property="Background" Value="#FFF3E0"/> [cite: 311]
+                            <Setter Property="Background" Value="#FFF3E0"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Estado}" Value="Error">
-                            <Setter Property="Background" Value="#FFEBEE"/> [cite: 312]
+                            <Setter Property="Background" Value="#FFEBEE"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </DataGrid.RowStyle>
         </DataGrid>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">[cite: 313]
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
             <Button Name="CorregirButton" 
                     Content="Corregir Filtros" 
                     Width="150" Height="35"
                     Margin="0,0,10,0"
-                    [cite_start]Click="CorregirButton_Click"/>[cite: 314]
+                    Click="CorregirButton_Click"/>
 
-                <Button Name="CerrarButton" 
+            <Button Name="CerrarButton" 
                     Content="Cerrar" 
                     Width="100" Height="35"
-                    [cite_start]Click="CerrarButton_Click"/>[cite: 315]
+                    Click="CerrarButton_Click"/>
         </StackPanel>
     </Grid>
 </Window>
