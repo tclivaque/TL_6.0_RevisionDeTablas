@@ -38,7 +38,10 @@ namespace TL60_RevisionDeTablas.Models
         /// </summary>
         public bool IsItemizedCorrect { get; set; }
 
-
+        /// <summary>
+        /// Almacena el trabajo de corrección de encabezados (Campo/Valor Correcto)
+        /// </summary>
+        public Dictionary<ScheduleField, string> HeadingsCorregidos { get; set; }
         public ElementData()
         {
             AuditResults = new List<AuditItem>();

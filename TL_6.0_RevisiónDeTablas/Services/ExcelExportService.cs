@@ -1,9 +1,8 @@
 ﻿// Services/ExcelExportService.cs
-using OfficeOpenXml; // Este 'using' es el correcto
+using OfficeOpenXml;
 using System.Collections.Generic;
 using System.IO;
 using TL60_RevisionDeTablas.Models;
-// Se eliminó 'using OfficeOpenXml.License;' que era incorrecto
 
 namespace TL60_RevisionDeTablas.Services
 {
@@ -11,9 +10,6 @@ namespace TL60_RevisionDeTablas.Services
     {
         public ExcelExportService()
         {
-            // (CORREGIDO) Revertido al código original.
-            // Mi intento anterior de "modernizar" esto fue incorrecto para la v8.2.1.
-            // Esta es la línea correcta, aunque genere un aviso de obsoleto.
             ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         }
 
@@ -23,11 +19,16 @@ namespace TL60_RevisionDeTablas.Services
             {
                 var worksheet = package.Workbook.Worksheets.Add("DiagnosticoFiltros");
 
-                // Encabezados (Todos en mayúsculas)
+                // Encabezados
                 worksheet.Cells[1, 1].Value = "ID";
                 worksheet.Cells[1, 2].Value = "ASSEMBLY CODE";
                 worksheet.Cells[1, 3].Value = "NOMBRE DE TABLA";
-                worksheet.Cells[1, 4].Value = "ENCABEZADO";
+
+                // ===================================================
+                // ===== CORRECCIÓN #5: Encabezado de Excel alineado =====
+                // ===================================================
+                worksheet.Cells[1, 4].Value = "AUDITORÍA"; // (Ya estaba correcto)
+
                 worksheet.Cells[1, 5].Value = "VALOR ACTUAL";
                 worksheet.Cells[1, 6].Value = "VALOR CORRECTO";
                 worksheet.Cells[1, 7].Value = "ESTADO";

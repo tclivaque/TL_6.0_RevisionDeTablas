@@ -1,4 +1,4 @@
-﻿// Services/ScheduleUpdateWriter.cs (Anteriormente ScheduleFilterWriter.cs)
+﻿// Services/ScheduleUpdateWriter.cs
 using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
@@ -8,7 +8,7 @@ using TL60_RevisionDeTablas.Models;
 namespace TL60_RevisionDeTablas.Services
 {
     /// <summary>
-    /// Escribe las correcciones (Filtros, Contenido) en las tablas
+    /// Escribe las correcciones (Filtros, Contenido, Columnas) en las tablas
     /// </summary>
     public class ScheduleUpdateWriter
     {
@@ -25,6 +25,7 @@ namespace TL60_RevisionDeTablas.Services
             int tablasCorregidas = 0;
             int filtrosCorregidos = 0;
             int contenidosCorregidos = 0;
+            int columnasCorregidas = 0; // (NUEVO) Contador
 
             using (Transaction trans = new Transaction(_doc, "Corregir Auditoría de Tablas"))
             {
@@ -66,9 +67,20 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // --- 3. Corregir CANTIDAD DE COLUMNAS (No implementado) ---
-                        // (La corrección de columnas no se implementa por complejidad)
-
+                        // ==========================================================
+                        // ===== CORRECCIÓN #2: Añadida lógica de Escritor de Columnas =====
+                        // ==========================================================
+                        var columnAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "COLUMNAS");
+                        if (columnAudit != null && columnAudit.Estado == EstadoParametro.Corregir)
+                        {
+                            var headingsToFix = columnAudit.Tag as Dictionary<ScheduleField, string>;
+                            if (headingsToFix != null && WriteHeadings(headingsToFix, result.Errores, elementData.Nombre))
+                            {
+                                columnasCorregidas += headingsToFix.Count;
+                                tablaModificada = true;
+                            }
+                        }
+                        // ==========================================================
 
                         if (tablaModificada)
                         {
@@ -81,7 +93,8 @@ namespace TL60_RevisionDeTablas.Services
                     result.Mensaje = $"Corrección completa.\n" +
                                      $"Tablas modificadas: {tablasCorregidas}\n" +
                                      $"Correcciones de Filtros: {filtrosCorregidos}\n" +
-                                     $"Correcciones de Contenido: {contenidosCorregidos}";
+                                     $"Correcciones de Contenido: {contenidosCorregidos}\n" +
+                                     $"Correcciones de Columnas: {columnasCorregidas}"; // (NUEVO)
                 }
                 catch (Exception ex)
                 {
@@ -95,16 +108,38 @@ namespace TL60_RevisionDeTablas.Services
         }
 
         /// <summary>
-        /// Lógica de escritura de filtros (extraída)
+        /// (NUEVO) Escribe los encabezados de columna corregidos
         /// </summary>
+        private bool WriteHeadings(Dictionary<ScheduleField, string> headingsToFix, List<string> errores, string nombreTabla)
+        {
+            try
+            {
+                foreach (var kvp in headingsToFix)
+                {
+                    ScheduleField field = kvp.Key;
+                    string correctedHeading = kvp.Value;
+
+                    // Validar que el campo aún sea válido antes de escribir
+                    if (field != null && field.IsValidObject && field.ColumnHeading != correctedHeading)
+                    {
+                        field.ColumnHeading = correctedHeading;
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errores.Add($"Error al escribir encabezados en '{nombreTabla}': {ex.Message}");
+                return false;
+            }
+        }
+
         private bool WriteFilters(ScheduleDefinition definition, List<ScheduleFilterInfo> filtrosCorrectos, List<string> errores, string nombreTabla)
         {
             try
             {
-                // 1. Limpiar filtros existentes
                 definition.ClearFilters();
 
-                // 2. Iterar y añadir los filtros correctos
                 foreach (var filtroInfo in filtrosCorrectos)
                 {
                     ScheduleField field = FindField(definition, filtroInfo.FieldName);
@@ -129,17 +164,12 @@ namespace TL60_RevisionDeTablas.Services
             }
         }
 
-        /// <summary>
-        /// Crea un ScheduleFilter basado en el TIPO del valor
-        /// </summary>
         private ScheduleFilter CreateScheduleFilter(ScheduleFieldId fieldId, ScheduleFilterInfo filtroInfo, List<string> errores, string nombreTabla)
         {
             if (filtroInfo.Value == null &&
                 filtroInfo.FilterType != ScheduleFilterType.HasValue &&
                 filtroInfo.FilterType != ScheduleFilterType.HasNoValue)
             {
-                // Un valor nulo solo es válido para HasValue/HasNoValue
-                // (Ejemplo: "METRADO" podría no tener valor si es 'HasNoValue')
                 errores.Add($"Valor de filtro nulo no compatible para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
                 return null;
             }
@@ -151,11 +181,10 @@ namespace TL60_RevisionDeTablas.Services
                 case double d:
                     return new ScheduleFilter(fieldId, filtroInfo.FilterType, d);
                 case int i:
-                    return new ScheduleFilter(fieldId, filtroInfo.FilterType, (double)i); // Revit 2021 usa Double para Ints
+                    return new ScheduleFilter(fieldId, filtroInfo.FilterType, (double)i);
                 case ElementId id:
                     return new ScheduleFilter(fieldId, filtroInfo.FilterType, id);
                 case null:
-                    // Esto es para HasValue o HasNoValue
                     return new ScheduleFilter(fieldId, filtroInfo.FilterType);
                 default:
                     errores.Add($"Valor de filtro no compatible ({filtroInfo.Value.GetType()}) para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
