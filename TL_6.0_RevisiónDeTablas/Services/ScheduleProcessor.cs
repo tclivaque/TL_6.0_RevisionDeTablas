@@ -15,6 +15,7 @@ namespace TL60_RevisionDeTablas.Services
     {
         private readonly Document _doc;
         private readonly GoogleSheetsService _sheetsService;
+        private readonly ScheduleEmptinessChecker _emptinessChecker;
 
         private readonly List<string> _expectedHeadings = new List<string>
         {
@@ -35,6 +36,7 @@ namespace TL60_RevisionDeTablas.Services
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
             _sheetsService = sheetsService ?? throw new ArgumentNullException(nameof(sheetsService));
+            _emptinessChecker = new ScheduleEmptinessChecker(doc);
         }
 
         private void LoadDataFromSheets() { }
@@ -79,13 +81,13 @@ namespace TL60_RevisionDeTablas.Services
             ScheduleDefinition definition = view.Definition;
 
             string[] parts = view.Name.Split(new[] { " - " }, StringSplitOptions.None);
-            elementData.CodigoIdentificacion = parts.Length > 0 ? parts[0].Trim() : view.Name;
+            elementData.CodigoIdentificacion = parts.Length > 0 ?
+                parts[0].Trim() : view.Name;
 
             // --- Ejecutar Auditorías ---
             var auditFilter = ProcessFilters(definition, elementData.CodigoIdentificacion);
             var auditColumns = ProcessColumns(definition);
-            // (¡CAMBIO IMPORTANTE!) Ahora pasamos el _doc para el colector rápido
-            var auditContent = ProcessContent(view, definition, _doc);
+            var auditContent = ProcessContent(view, definition);
 
             elementData.AuditResults.Add(auditFilter);
             elementData.AuditResults.Add(auditColumns);
@@ -245,12 +247,13 @@ namespace TL60_RevisionDeTablas.Services
 
         #endregion
 
-        #region Auditoría 3: CONTENIDO (¡CORREGIDO!)
+        #region Auditoría 3: CONTENIDO (¡OPTIMIZADO CON EARLY EXIT!)
 
         /// <summary>
         /// Auditoría de CONTENIDO: Revisa "Itemize" y si la tabla está vacía.
+        /// AHORA USA: ScheduleEmptinessChecker con estrategia de Early Exit optimizada.
         /// </summary>
-        private AuditItem ProcessContent(ViewSchedule view, ScheduleDefinition definition, Document doc)
+        private AuditItem ProcessContent(ViewSchedule view, ScheduleDefinition definition)
         {
             var item = new AuditItem
             {
@@ -258,36 +261,27 @@ namespace TL60_RevisionDeTablas.Services
                 IsCorrectable = true
             };
 
-            // 1. Verificar "Itemize every instance" (Esto es RÁPIDO)
+            // 1. Verificar "Itemize every instance" (RÁPIDO)
             bool isItemized = definition.IsItemized;
 
-            // 2. Verificar si la tabla está vacía (¡MÉTODO RÁPIDO!)
-            int rowCount = 0;
+            // 2. Verificar si la tabla está vacía (¡NUEVO MÉTODO OPTIMIZADO!)
+            bool isEmpty = false;
             try
             {
-                // =======================================================
-                // ==== ¡AQUÍ ESTÁ LA CORRECCIÓN DE RENDIMIENTO! ====
-                //
-                // En lugar de "dibujar" la tabla (GetTableData), usamos un colector
-                // que solo ejecuta los filtros de la tabla en la base de datos.
-                // Esto es drásticamente más rápido.
-                //
-                rowCount = new FilteredElementCollector(doc, view.Id).GetElementCount();
-                // =======================================================
+                isEmpty = _emptinessChecker.IsScheduleEmpty(view);
             }
             catch (Exception)
             {
-                // Ignorar si falla (ej. en plantillas de tabla que no pueden ejecutarse)
+                // Si falla, asumir que NO está vacía (evitar falsos positivos)
+                isEmpty = false;
             }
-
-            bool isEmpty = rowCount == 0;
 
             // --- Construir Strings ---
             string actualItemizedStr = isItemized ? "Sí" : "No";
-            string actualRowsStr = isEmpty ? "Vacía (0 Filas)" : $"Con Datos ({rowCount} Filas)";
+            string actualRowsStr = isEmpty ? "Vacía (0 elementos)" : "Con Datos";
 
             item.ValorActual = $"Detallar cada ejemplar: {actualItemizedStr}\nContenido: {actualRowsStr}";
-            item.ValorCorrecto = $"Detallar cada ejemplar: Sí\nContenido: Con Datos (> 0 Filas)";
+            item.ValorCorrecto = $"Detallar cada ejemplar: Sí\nContenido: Con Datos";
 
             // --- Validar ---
             if (isItemized && !isEmpty)
@@ -302,7 +296,7 @@ namespace TL60_RevisionDeTablas.Services
 
                 var mensajes = new List<string>();
                 if (!isItemized) mensajes.Add("Error: 'Detallar cada ejemplar' está desactivado.");
-                if (isEmpty) mensajes.Add("Advertencia: La tabla no tiene filas (está vacía).");
+                if (isEmpty) mensajes.Add("Advertencia: La tabla no tiene elementos (está vacía).");
                 item.Mensaje = string.Join("\n", mensajes);
             }
 

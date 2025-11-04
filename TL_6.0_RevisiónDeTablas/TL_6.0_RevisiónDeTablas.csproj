@@ -112,6 +112,7 @@
     <Compile Include="Services\DiagnosticDataBuilder.cs" />
     <Compile Include="Services\ExcelExportService.cs" />
     <Compile Include="Services\GoogleSheetsService.cs" />
+    <Compile Include="Services\ScheduleEmptinessChecker.cs" />
     <Compile Include="Services\ScheduleFilterWriter.cs" />
     <Compile Include="Services\ScheduleProcessor.cs" />
     <Compile Include="Services\ScheduleWriterHandler.cs" />

@@ -1,13 +1,16 @@
 ﻿// Services/DiagnosticDataBuilder.cs
+using Autodesk.Revit.DB;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Autodesk.Revit.DB;
+using MediaColor = System.Windows.Media.Color;
+using MediaBrush = System.Windows.Media.SolidColorBrush;
 using TL60_RevisionDeTablas.Models;
 
 namespace TL60_RevisionDeTablas.Services
 {
     /// <summary>
-    /// Construye los datos para la ventana de diagnóstico
+    /// Construye las filas de diagnóstico para mostrar en la ventana
     /// </summary>
     public class DiagnosticDataBuilder
     {
@@ -17,46 +20,118 @@ namespace TL60_RevisionDeTablas.Services
 
             foreach (var elementData in elementosData)
             {
-                if (elementData.AuditResults == null) continue;
+                if (elementData.Element == null) continue;
 
                 string idMostrar = elementData.ElementId?.IntegerValue.ToString() ?? "N/A";
 
-                // (NUEVA LÓGICA) Itera sobre cada resultado de auditoría y crea una fila
-                foreach (var auditItem in elementData.AuditResults)
+                // ===== CORRECCIÓN #2: Implementar lógica de EsSeleccionable =====
+                // Las tablas (ViewSchedule) SON seleccionables (tienen ElementId válido)
+                bool esSeleccionable = (elementData.ElementId != null && elementData.ElementId != ElementId.InvalidElementId);
+
+                // Procesar cada resultado de auditoría
+                foreach (var auditResult in elementData.AuditResults)
                 {
                     var row = new DiagnosticRow
                     {
-                        // Datos del Elemento
                         ElementId = elementData.ElementId,
                         IdMostrar = idMostrar,
+                        Grupo = elementData.Categoria,
                         CodigoIdentificacion = elementData.CodigoIdentificacion,
                         Descripcion = elementData.Nombre,
-
-                        // Datos de la Auditoría Específica
-                        NombreParametro = auditItem.AuditType.ToUpper(), // "FILTRO", "CONTENIDO", etc.
-                        ValorActual = auditItem.ValorActual,
-                        ValorCorregido = auditItem.ValorCorrecto,
-                        Estado = auditItem.Estado,
-                        Mensaje = auditItem.Mensaje
+                        NombreParametro = auditResult.AuditType,
+                        ValorActual = auditResult.ValorActual,
+                        ValorCorregido = auditResult.ValorCorrecto,
+                        Estado = auditResult.Estado,
+                        Mensaje = auditResult.Mensaje,
+                        EsSeleccionable = esSeleccionable // ← CRÍTICO: Habilita el botón 👁️
                     };
+
                     rows.Add(row);
                 }
             }
 
-            // Ordenar: CORREGIR → VACÍO → ERROR → CORRECTO
+            // Ordenar filas
             rows = rows.OrderBy(r => GetEstadoOrder(r.Estado))
                       .ThenBy(r => r.ElementId?.IntegerValue ?? 0)
-                      .ThenBy(r => r.NombreParametro) // Ordenar por tipo de auditoría
                       .ToList();
 
+            // Asignar números de fila
             for (int i = 0; i < rows.Count; i++)
             {
                 rows[i].NumeroFila = i + 1;
             }
 
+            // ===== CORRECCIÓN #3: Aplicar colores alternos por ID =====
+            ApplyAlternatingColorsByID(rows);
+
             return rows;
         }
 
+        /// <summary>
+        /// Aplica colores alternos agrupados por ElementId (copiado de COBie)
+        /// </summary>
+        private void ApplyAlternatingColorsByID(List<DiagnosticRow> rows)
+        {
+            string currentID = null;
+            bool useAlternateColor = false;
+
+            foreach (var row in rows)
+            {
+                // Cambiar color cuando cambia el ID
+                if (row.IdMostrar != currentID)
+                {
+                    currentID = row.IdMostrar;
+                    useAlternateColor = !useAlternateColor;
+                }
+
+                // Obtener color base según el estado
+                MediaColor baseColor = GetBaseColorForEstado(row.Estado);
+
+                // Oscurecer si es fila alternada
+                if (useAlternateColor)
+                {
+                    baseColor = DarkenColor(baseColor, 15);
+                }
+
+                // Asignar color
+                row.BackgroundColor = new MediaBrush(baseColor);
+            }
+        }
+
+        /// <summary>
+        /// Obtiene el color base según el estado del parámetro
+        /// </summary>
+        private MediaColor GetBaseColorForEstado(EstadoParametro estado)
+        {
+            switch (estado)
+            {
+                case EstadoParametro.Correcto:
+                    return MediaColor.FromRgb(212, 237, 218); // Verde claro
+                case EstadoParametro.Vacio:
+                    return MediaColor.FromRgb(255, 243, 205); // Amarillo claro
+                case EstadoParametro.Corregir:
+                    return MediaColor.FromRgb(209, 236, 241); // Azul claro
+                case EstadoParametro.Error:
+                    return MediaColor.FromRgb(248, 215, 218); // Rojo claro
+                default:
+                    return MediaColor.FromRgb(255, 255, 255); // Blanco
+            }
+        }
+
+        /// <summary>
+        /// Oscurece un color para crear el efecto alternado
+        /// </summary>
+        private MediaColor DarkenColor(MediaColor color, byte amount)
+        {
+            byte r = (byte)Math.Max(0, color.R - amount);
+            byte g = (byte)Math.Max(0, color.G - amount);
+            byte b = (byte)Math.Max(0, color.B - amount);
+            return MediaColor.FromRgb(r, g, b);
+        }
+
+        /// <summary>
+        /// Orden de prioridad para estados (para ordenamiento)
+        /// </summary>
         private int GetEstadoOrder(EstadoParametro estado)
         {
             switch (estado)
@@ -65,7 +140,7 @@ namespace TL60_RevisionDeTablas.Services
                 case EstadoParametro.Vacio: return 2;
                 case EstadoParametro.Error: return 3;
                 case EstadoParametro.Correcto: return 4;
-                default: return 5;
+                default: return 99;
             }
         }
     }
