@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Services/GoogleSheetsService.cs
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -31,8 +32,11 @@ namespace TL60_RevisionDeTablas.Services
                 GoogleCredential credential;
                 using (var stream = new FileStream(CREDENTIALS_PATH, FileMode.Open, FileAccess.Read))
                 {
+                    // (CORREGIDO) Suprimir advertencia de obsoleto, igual que en el proyecto COBie
+#pragma warning disable CS0618
                     credential = GoogleCredential.FromStream(stream)
                         .CreateScoped(new[] { SheetsService.Scope.Spreadsheets });
+#pragma warning restore CS0618
                 }
 
                 _service = new SheetsService(new BaseClientService.Initializer()

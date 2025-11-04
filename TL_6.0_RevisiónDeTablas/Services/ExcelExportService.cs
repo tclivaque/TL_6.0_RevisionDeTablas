@@ -1,18 +1,19 @@
-﻿using OfficeOpenXml;
+﻿// Services/ExcelExportService.cs
+using OfficeOpenXml; // Este 'using' es el correcto
 using System.Collections.Generic;
 using System.IO;
 using TL60_RevisionDeTablas.Models;
+// Se eliminó 'using OfficeOpenXml.License;' que era incorrecto
 
 namespace TL60_RevisionDeTablas.Services
 {
-    /// <summary>
-    /// Servicio para exportar el diagnóstico a un archivo Excel .xlsx
-    /// </summary>
     public class ExcelExportService
     {
         public ExcelExportService()
         {
-            // Requerido por la licencia de EPPlus (Ignora la advertencia de obsoleto)
+            // (CORREGIDO) Revertido al código original.
+            // Mi intento anterior de "modernizar" esto fue incorrecto para la v8.2.1.
+            // Esta es la línea correcta, aunque genere un aviso de obsoleto.
             ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         }
 
@@ -22,15 +23,15 @@ namespace TL60_RevisionDeTablas.Services
             {
                 var worksheet = package.Workbook.Worksheets.Add("DiagnosticoFiltros");
 
-                // Encabezados
+                // Encabezados (Todos en mayúsculas)
                 worksheet.Cells[1, 1].Value = "ID";
-                worksheet.Cells[1, 2].Value = "Assembly Code";
-                worksheet.Cells[1, 3].Value = "Nombre de Tabla";
-                worksheet.Cells[1, 4].Value = "Encabezado";
-                worksheet.Cells[1, 5].Value = "Valor Actual";
-                worksheet.Cells[1, 6].Value = "Valor Correcto";
-                worksheet.Cells[1, 7].Value = "Estado";
-                worksheet.Cells[1, 8].Value = "Mensaje";
+                worksheet.Cells[1, 2].Value = "ASSEMBLY CODE";
+                worksheet.Cells[1, 3].Value = "NOMBRE DE TABLA";
+                worksheet.Cells[1, 4].Value = "ENCABEZADO";
+                worksheet.Cells[1, 5].Value = "VALOR ACTUAL";
+                worksheet.Cells[1, 6].Value = "VALOR CORRECTO";
+                worksheet.Cells[1, 7].Value = "ESTADO";
+                worksheet.Cells[1, 8].Value = "MENSAJE";
 
                 // Aplicar formato a los encabezados
                 using (var range = worksheet.Cells[1, 1, 1, 8])
@@ -44,7 +45,7 @@ namespace TL60_RevisionDeTablas.Services
                 for (int i = 0; i < diagnosticRows.Count; i++)
                 {
                     var row = diagnosticRows[i];
-                    int rowIndex = i + 2; // Empezar desde la fila 2
+                    int rowIndex = i + 2;
 
                     worksheet.Cells[rowIndex, 1].Value = row.IdMostrar;
                     worksheet.Cells[rowIndex, 2].Value = row.CodigoIdentificacion;
@@ -56,12 +57,7 @@ namespace TL60_RevisionDeTablas.Services
                     worksheet.Cells[rowIndex, 8].Value = row.Mensaje;
                 }
 
-                // (¡¡¡CORREGIDO!!!)
-                // Se eliminó la línea "worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();"
-                // para evitar el error de "Método no encontrado".
-                // Puedes auto-ajustar manualmente las columnas 1 a 8 si lo deseas:
                 worksheet.Cells[1, 1, 1, 8].AutoFitColumns();
-
 
                 return package.GetAsByteArray();
             }

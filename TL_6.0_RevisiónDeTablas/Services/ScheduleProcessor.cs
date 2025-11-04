@@ -1,4 +1,5 @@
-﻿using Autodesk.Revit.DB;
+﻿// Services/ScheduleProcessor.cs
+using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,44 +9,35 @@ using TL60_RevisionDeTablas.Models;
 namespace TL60_RevisionDeTablas.Services
 {
     /// <summary>
-    /// Procesador para Tablas de Planificación (ViewSchedule)
+    /// Procesador para auditar Tablas de Planificación (ViewSchedule)
     /// </summary>
     public class ScheduleProcessor
     {
         private readonly Document _doc;
         private readonly GoogleSheetsService _sheetsService;
-        private HashSet<string> _assemblyCodesFromSheets;
+
+        private readonly List<string> _expectedHeadings = new List<string>
+        {
+            "CODIGO",
+            "DESCRIPCION",
+            "ACTIVO",
+            "MODULO",
+            "NIVEL",
+            "AMBIENTE", // Este es el caso base
+            "PARCIAL",
+            "UNIDAD",
+            "ID DE ELEMENTO"
+        };
+        private const int _expectedHeadingCount = 9;
+
 
         public ScheduleProcessor(Document doc, GoogleSheetsService sheetsService)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
             _sheetsService = sheetsService ?? throw new ArgumentNullException(nameof(sheetsService));
-            LoadDataFromSheets();
         }
 
-        private void LoadDataFromSheets()
-        {
-            _assemblyCodesFromSheets = new HashSet<string>();
-            try
-            {
-                string spreadsheetId = "14bYBONt68lfM-sx6iIJxkYExXS0u7sdgijEScL3Ed3Y";
-                string range = "'TABLAS_ARQ'!B2:B";
-                var values = _sheetsService.ReadData(spreadsheetId, range);
-
-                foreach (var row in values)
-                {
-                    string key = GoogleSheetsService.GetCellValue(row, 0);
-                    if (!string.IsNullOrWhiteSpace(key))
-                    {
-                        _assemblyCodesFromSheets.Add(key.Trim().ToUpper());
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error al cargar datos de Sheets: {ex.Message}");
-            }
-        }
+        private void LoadDataFromSheets() { }
 
         public List<ElementData> ProcessElements()
         {
@@ -62,7 +54,7 @@ namespace TL60_RevisionDeTablas.Services
                 Parameter groupParam = view.LookupParameter("GRUPO DE VISTA");
                 string groupValue = groupParam?.AsString();
 
-                if (string.IsNullOrWhiteSpace(groupValue) || !groupValue.StartsWith("C."))
+                if (string.IsNullOrWhiteSpace(groupValue) || !groupValue.ToUpper().StartsWith("C."))
                 {
                     continue;
                 }
@@ -85,106 +77,241 @@ namespace TL60_RevisionDeTablas.Services
             };
 
             ScheduleDefinition definition = view.Definition;
-            var filtrosActuales = definition.GetFilters();
-            elementData.FiltrosActualesString = GetFiltersAsString(definition, filtrosActuales);
 
-            // 1. Parsear Assembly Code del nombre
             string[] parts = view.Name.Split(new[] { " - " }, StringSplitOptions.None);
-            if (parts.Length < 2)
+            elementData.CodigoIdentificacion = parts.Length > 0 ? parts[0].Trim() : view.Name;
+
+            // --- Ejecutar Auditorías ---
+            var auditFilter = ProcessFilters(definition, elementData.CodigoIdentificacion);
+            var auditColumns = ProcessColumns(definition);
+            // (¡CAMBIO IMPORTANTE!) Ahora pasamos el _doc para el colector rápido
+            var auditContent = ProcessContent(view, definition, _doc);
+
+            elementData.AuditResults.Add(auditFilter);
+            elementData.AuditResults.Add(auditColumns);
+            elementData.AuditResults.Add(auditContent);
+
+            // --- Almacenar datos para corrección ---
+            if (auditFilter.Estado == EstadoParametro.Corregir)
             {
-                elementData.Mensajes.Add("Error: El nombre de la tabla no tiene el formato esperado (Codigo - Descripcion - RNG).");
-                return elementData;
+                elementData.FiltrosCorrectos = (List<ScheduleFilterInfo>)auditFilter.Tag;
             }
-            string assemblyCode = parts[0].Trim();
-            elementData.CodigoIdentificacion = assemblyCode;
-
-
-            // 2. Determinar Filtros Correctos (NUEVA LÓGICA)
-            var filtrosCorrectos = new List<ScheduleFilterInfo>();
-
-            // --- Filtro 1 (Código): Buscar 'MATERIAL_ASSEMBLY CODE' primero ---
-            string codigoFieldName = "Assembly Code"; // Fallback
-            if (FindField(definition, "MATERIAL_ASSEMBLY CODE") != null)
+            if (auditContent.Estado == EstadoParametro.Corregir)
             {
-                codigoFieldName = "MATERIAL_ASSEMBLY CODE"; // Prioridad
-            }
-            filtrosCorrectos.Add(new ScheduleFilterInfo
-            {
-                FieldName = codigoFieldName,
-                FilterType = ScheduleFilterType.Equal,
-                Value = assemblyCode
-            });
-
-            // --- Filtro 2 (Empresa): Siempre 'EMPRESA' ---
-            filtrosCorrectos.Add(new ScheduleFilterInfo
-            {
-                FieldName = "EMPRESA",
-                FilterType = ScheduleFilterType.Equal,
-                Value = "RNG"
-            });
-
-            // --- Filtro 3 (Opcional): Buscar 'METRADO' en filtros actuales ---
-            if (CheckForMetradoFilter(definition, filtrosActuales))
-            {
-                filtrosCorrectos.Add(new ScheduleFilterInfo
-                {
-                    FieldName = "Assembly Code",
-                    FilterType = ScheduleFilterType.Equal,
-                    Value = "METRADO"
-                });
+                elementData.IsItemizedCorrect = false;
             }
 
-            // 3. Almacenar resultados en ElementData
-            elementData.FiltrosCorrectos = filtrosCorrectos;
-            elementData.FiltrosCorrectosString = string.Join("\n", filtrosCorrectos.Select(f => f.AsString()));
-
-            // 4. Comparar y asignar estado
-            if (elementData.FiltrosActualesString == elementData.FiltrosCorrectosString)
-            {
-                elementData.DatosCompletos = true;
-            }
-            else
-            {
-                elementData.Mensajes.Add(GetErrorMessage(elementData.FiltrosActualesString, elementData.FiltrosCorrectosString));
-            }
+            elementData.DatosCompletos = elementData.AuditResults.All(r => r.Estado == EstadoParametro.Correcto);
 
             return elementData;
         }
 
-        /// <summary>
-        /// Busca un ScheduleField en la definición por su nombre
-        /// </summary>
-        private ScheduleField FindField(ScheduleDefinition definition, string fieldName)
+        #region Auditoría 1: FILTRO
+
+        private AuditItem ProcessFilters(ScheduleDefinition definition, string assemblyCode)
         {
+            var item = new AuditItem
+            {
+                AuditType = "FILTRO",
+                IsCorrectable = true
+            };
+
+            var filtrosActuales = definition.GetFilters().ToList();
+            var filtrosCorrectosInfo = new List<ScheduleFilterInfo>();
+
+            ScheduleFilter assemblyCodeFilter = FindAssemblyCodeFilter(filtrosActuales, definition);
+            if (assemblyCodeFilter != null)
+            {
+                string fieldName = definition.GetField(assemblyCodeFilter.FieldId).GetName();
+                filtrosCorrectosInfo.Add(new ScheduleFilterInfo
+                {
+                    FieldName = fieldName,
+                    FilterType = ScheduleFilterType.Equal,
+                    Value = assemblyCode
+                });
+            }
+
+            ScheduleFilter empresaFilter = filtrosActuales.FirstOrDefault(f =>
+                definition.GetField(f.FieldId).GetName().Equals("EMPRESA", StringComparison.OrdinalIgnoreCase));
+            if (empresaFilter != null)
+            {
+                filtrosCorrectosInfo.Add(new ScheduleFilterInfo
+                {
+                    FieldName = "EMPRESA",
+                    FilterType = ScheduleFilterType.Equal,
+                    Value = "RNG"
+                });
+            }
+
+            foreach (var filter in filtrosActuales)
+            {
+                if (filter != assemblyCodeFilter && filter != empresaFilter)
+                {
+                    var field = definition.GetField(filter.FieldId);
+                    if (field == null) continue;
+
+                    filtrosCorrectosInfo.Add(new ScheduleFilterInfo
+                    {
+                        FieldName = field.GetName(),
+                        FilterType = filter.FilterType,
+                        Value = GetFilterValueObject(filter)
+                    });
+                }
+            }
+
+            item.ValorActual = GetFiltersAsString(definition, filtrosActuales);
+            item.ValorCorrecto = string.Join("\n", filtrosCorrectosInfo.Select(f => f.AsString()));
+            item.Tag = filtrosCorrectosInfo;
+
+            if (item.ValorActual == item.ValorCorrecto)
+            {
+                item.Estado = EstadoParametro.Correcto;
+                item.Mensaje = "Filtros correctos.";
+            }
+            else
+            {
+                item.Estado = EstadoParametro.Corregir;
+                if (filtrosActuales.Count == 0) item.Mensaje = "Error: No hay filtros.";
+                else item.Mensaje = "Error: Los filtros no coinciden con el orden o los valores esperados.";
+            }
+
+            return item;
+        }
+
+        private ScheduleFilter FindAssemblyCodeFilter(List<ScheduleFilter> filters, ScheduleDefinition def)
+        {
+            var matFilter = filters.FirstOrDefault(f =>
+                def.GetField(f.FieldId).GetName().Equals("MATERIAL_ASSEMBLY CODE", StringComparison.OrdinalIgnoreCase));
+            if (matFilter != null) return matFilter;
+
+            return filters.FirstOrDefault(f =>
+                def.GetField(f.FieldId).GetName().Equals("Assembly Code", StringComparison.OrdinalIgnoreCase));
+        }
+
+        #endregion
+
+        #region Auditoría 2: CANTIDAD DE COLUMNAS
+
+        private AuditItem ProcessColumns(ScheduleDefinition definition)
+        {
+            var item = new AuditItem
+            {
+                AuditType = "CANTIDAD DE COLUMNAS",
+                IsCorrectable = false
+            };
+
+            var actualHeadings = new List<string>();
             for (int i = 0; i < definition.GetFieldCount(); i++)
             {
                 var field = definition.GetField(i);
-                if (field.GetName().Equals(fieldName, StringComparison.OrdinalIgnoreCase))
+                if (!field.IsHidden)
                 {
-                    return field;
+                    actualHeadings.Add(field.ColumnHeading.ToUpper().Trim());
                 }
             }
-            return null;
+
+            item.ValorCorrecto = $"Total: {_expectedHeadingCount}\n" + string.Join("\n", _expectedHeadings);
+            item.ValorActual = $"Total: {actualHeadings.Count}\n" + string.Join("\n", actualHeadings);
+
+            if (actualHeadings.Count != _expectedHeadingCount)
+            {
+                item.Estado = EstadoParametro.Error;
+                item.Mensaje = $"Error: Se esperaban {_expectedHeadingCount} columnas visibles, pero se encontraron {actualHeadings.Count}.";
+                return item;
+            }
+
+            for (int i = 0; i < _expectedHeadingCount; i++)
+            {
+                string actual = actualHeadings[i];
+                string expected = _expectedHeadings[i];
+
+                if (i == 5 && (actual == "AMBIENTE" || actual == "EJES"))
+                {
+                    continue;
+                }
+
+                if (actual != expected)
+                {
+                    item.Estado = EstadoParametro.Error;
+                    item.Mensaje = $"Error en columna {i + 1}: Se esperaba '{expected}', pero se encontró '{actual}'.";
+                    return item;
+                }
+            }
+
+            item.Estado = EstadoParametro.Correcto;
+            item.Mensaje = "Columnas correctas.";
+            return item;
         }
 
+        #endregion
+
+        #region Auditoría 3: CONTENIDO (¡CORREGIDO!)
+
         /// <summary>
-        /// Revisa si el filtro 'Assembly Code equals METRADO' existe
+        /// Auditoría de CONTENIDO: Revisa "Itemize" y si la tabla está vacía.
         /// </summary>
-        private bool CheckForMetradoFilter(ScheduleDefinition definition, IList<ScheduleFilter> filters)
+        private AuditItem ProcessContent(ViewSchedule view, ScheduleDefinition definition, Document doc)
         {
-            foreach (var filter in filters)
+            var item = new AuditItem
             {
-                var field = definition.GetField(filter.FieldId);
-                if (field != null &&
-                    field.GetName().Equals("Assembly Code", StringComparison.OrdinalIgnoreCase) &&
-                    filter.FilterType == ScheduleFilterType.Equal &&
-                    GetFilterValue2021(filter).Equals("METRADO", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                AuditType = "CONTENIDO",
+                IsCorrectable = true
+            };
+
+            // 1. Verificar "Itemize every instance" (Esto es RÁPIDO)
+            bool isItemized = definition.IsItemized;
+
+            // 2. Verificar si la tabla está vacía (¡MÉTODO RÁPIDO!)
+            int rowCount = 0;
+            try
+            {
+                // =======================================================
+                // ==== ¡AQUÍ ESTÁ LA CORRECCIÓN DE RENDIMIENTO! ====
+                //
+                // En lugar de "dibujar" la tabla (GetTableData), usamos un colector
+                // que solo ejecuta los filtros de la tabla en la base de datos.
+                // Esto es drásticamente más rápido.
+                //
+                rowCount = new FilteredElementCollector(doc, view.Id).GetElementCount();
+                // =======================================================
             }
-            return false;
+            catch (Exception)
+            {
+                // Ignorar si falla (ej. en plantillas de tabla que no pueden ejecutarse)
+            }
+
+            bool isEmpty = rowCount == 0;
+
+            // --- Construir Strings ---
+            string actualItemizedStr = isItemized ? "Sí" : "No";
+            string actualRowsStr = isEmpty ? "Vacía (0 Filas)" : $"Con Datos ({rowCount} Filas)";
+
+            item.ValorActual = $"Detallar cada ejemplar: {actualItemizedStr}\nContenido: {actualRowsStr}";
+            item.ValorCorrecto = $"Detallar cada ejemplar: Sí\nContenido: Con Datos (> 0 Filas)";
+
+            // --- Validar ---
+            if (isItemized && !isEmpty)
+            {
+                item.Estado = EstadoParametro.Correcto;
+                item.Mensaje = "Contenido correcto.";
+            }
+            else
+            {
+                // Si 'Itemize' está mal, es Corregir. Si solo está vacía, es Vacio (Advertencia).
+                item.Estado = !isItemized ? EstadoParametro.Corregir : EstadoParametro.Vacio;
+
+                var mensajes = new List<string>();
+                if (!isItemized) mensajes.Add("Error: 'Detallar cada ejemplar' está desactivado.");
+                if (isEmpty) mensajes.Add("Advertencia: La tabla no tiene filas (está vacía).");
+                item.Mensaje = string.Join("\n", mensajes);
+            }
+
+            return item;
         }
+
+        #endregion
+
+        #region Helpers de Filtros
 
         private string GetFiltersAsString(ScheduleDefinition definition, IList<ScheduleFilter> filters)
         {
@@ -200,42 +327,46 @@ namespace TL60_RevisionDeTablas.Services
 
                 string fieldName = field.GetName();
                 string condition = filter.FilterType.ToString();
-                string value = GetFilterValue2021(filter);
+                string value = GetFilterValueString(filter);
                 filterStrings.Add($"{fieldName} {condition} {value}");
             }
             return string.Join("\n", filterStrings);
         }
 
-        // (¡¡¡CORREGIDO!!!)
-        private string GetFilterValue2021(ScheduleFilter filter)
+        private string GetFilterValueString(ScheduleFilter filter)
         {
             if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue)
                 return string.Empty;
 
             if (filter.IsStringValue)
-            {
                 return filter.GetStringValue();
-            }
 
-            // API 2021 no tiene 'GetIntegerValue', los enteros se leen como Double
             if (filter.IsDoubleValue)
-            {
                 return filter.GetDoubleValue().ToString();
-            }
 
             if (filter.IsElementIdValue)
-            {
                 return filter.GetElementIdValue().IntegerValue.ToString();
-            }
 
             return "(valor no legible)";
         }
 
-        private string GetErrorMessage(string actual, string correcto)
+        private object GetFilterValueObject(ScheduleFilter filter)
         {
-            if (actual == "(Sin Filtros)") return "Error: No hay filtros.";
+            if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue)
+                return null;
 
-            return "Error: Los filtros no coinciden con el orden o los valores correctos.";
+            if (filter.IsStringValue)
+                return filter.GetStringValue();
+
+            if (filter.IsDoubleValue)
+                return filter.GetDoubleValue();
+
+            if (filter.IsElementIdValue)
+                return filter.GetElementIdValue();
+
+            return null;
         }
+
+        #endregion
     }
 }

@@ -1,10 +1,12 @@
-﻿using System.Collections.Generic;
+﻿// Models/ElementData.cs
+using System.Collections.Generic;
 using Autodesk.Revit.DB;
 
 namespace TL60_RevisionDeTablas.Models
 {
     /// <summary>
-    /// Contiene los datos de un elemento procesado
+    /// Contiene los datos de un elemento (ViewSchedule) procesado
+    /// y todos sus resultados de auditoría.
     /// </summary>
     public class ElementData
     {
@@ -12,39 +14,37 @@ namespace TL60_RevisionDeTablas.Models
         public Element Element { get; set; }
         public string Nombre { get; set; }
         public string Categoria { get; set; }
-        public string Grupo { get; set; }
         public string CodigoIdentificacion { get; set; }
+
+        /// <summary>
+        /// Se establece en True solo si TODAS las auditorías (Filtro, Contenido, Columnas) son correctas.
+        /// </summary>
         public bool DatosCompletos { get; set; }
 
         /// <summary>
-        /// (NUEVO) Almacena la lista de filtros que se deben ESCRIBIR
+        /// (NUEVO) Almacena la lista de todos los resultados de la auditoría (Filtro, Contenido, etc.)
+        /// </summary>
+        public List<AuditItem> AuditResults { get; set; }
+
+        /// <summary>
+        /// Almacena la lista de filtros que se deben ESCRIBIR
+        /// (solo se rellena si la auditoría de filtros falla)
         /// </summary>
         public List<ScheduleFilterInfo> FiltrosCorrectos { get; set; }
 
         /// <summary>
-        /// (NUEVO) Almacena el valor actual de los filtros como string
+        /// Almacena el estado del check "Itemize"
+        /// (solo se usa si la auditoría de contenido falla)
         /// </summary>
-        public string FiltrosActualesString { get; set; }
-
-        /// <summary>
-        /// (NUEVO) Almacena el valor correcto de los filtros como string
-        /// </summary>
-        public string FiltrosCorrectosString { get; set; }
-
-        public List<string> Mensajes { get; set; }
-
-        // --- Propiedades antiguas (ya no se usan) ---
-        // public Dictionary<string, string> ParametrosActualizar { get; set; }
-        // public Dictionary<string, string> ParametrosActuales { get; set; }
-        // public List<string> ParametrosVacios { get; set; }
-        // public Dictionary<string, string> ParametrosCorrectos { get; set; }
+        public bool IsItemizedCorrect { get; set; }
 
 
         public ElementData()
         {
+            AuditResults = new List<AuditItem>();
             FiltrosCorrectos = new List<ScheduleFilterInfo>();
-            Mensajes = new List<string>();
             DatosCompletos = false;
+            IsItemizedCorrect = true; // Asumir correcto hasta que se demuestre lo contrario
         }
     }
 }

@@ -103,6 +103,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Commands\MainCommand.cs" />
+    <Compile Include="Models\AuditItem.cs" />
     <Compile Include="Models\DiagnosticRow.cs" />
     <Compile Include="Models\ElementData.cs" />
     <Compile Include="Models\ProcessingResult.cs" />

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿// Services/DiagnosticDataBuilder.cs
+using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using TL60_RevisionDeTablas.Models;
@@ -16,39 +17,36 @@ namespace TL60_RevisionDeTablas.Services
 
             foreach (var elementData in elementosData)
             {
+                if (elementData.AuditResults == null) continue;
+
                 string idMostrar = elementData.ElementId?.IntegerValue.ToString() ?? "N/A";
-                var row = new DiagnosticRow
-                {
-                    ElementId = elementData.ElementId,
-                    IdMostrar = idMostrar,
-                    CodigoIdentificacion = elementData.CodigoIdentificacion,
-                    Descripcion = elementData.Nombre,
-                    NombreParametro = "Filtros", // Siempre será "Filtros"
-                    ValorActual = elementData.FiltrosActualesString,
-                    ValorCorregido = elementData.FiltrosCorrectosString,
-                    Mensaje = string.Join("\n", elementData.Mensajes)
-                };
 
-                // Asignar estado
-                if (elementData.DatosCompletos)
+                // (NUEVA LÓGICA) Itera sobre cada resultado de auditoría y crea una fila
+                foreach (var auditItem in elementData.AuditResults)
                 {
-                    row.Estado = EstadoParametro.Correcto;
-                }
-                else if (elementData.Mensajes.Count > 0)
-                {
-                    row.Estado = EstadoParametro.Corregir; // Azul (o Rojo si prefieres)
-                }
-                else
-                {
-                    row.Estado = EstadoParametro.Vacio; // Naranja (si no hay mensaje)
-                }
+                    var row = new DiagnosticRow
+                    {
+                        // Datos del Elemento
+                        ElementId = elementData.ElementId,
+                        IdMostrar = idMostrar,
+                        CodigoIdentificacion = elementData.CodigoIdentificacion,
+                        Descripcion = elementData.Nombre,
 
-                rows.Add(row);
+                        // Datos de la Auditoría Específica
+                        NombreParametro = auditItem.AuditType.ToUpper(), // "FILTRO", "CONTENIDO", etc.
+                        ValorActual = auditItem.ValorActual,
+                        ValorCorregido = auditItem.ValorCorrecto,
+                        Estado = auditItem.Estado,
+                        Mensaje = auditItem.Mensaje
+                    };
+                    rows.Add(row);
+                }
             }
 
-            // Ordenar: CORREGIR → VACÍO → CORRECTO
+            // Ordenar: CORREGIR → VACÍO → ERROR → CORRECTO
             rows = rows.OrderBy(r => GetEstadoOrder(r.Estado))
                       .ThenBy(r => r.ElementId?.IntegerValue ?? 0)
+                      .ThenBy(r => r.NombreParametro) // Ordenar por tipo de auditoría
                       .ToList();
 
             for (int i = 0; i < rows.Count; i++)
@@ -65,7 +63,7 @@ namespace TL60_RevisionDeTablas.Services
             {
                 case EstadoParametro.Corregir: return 1;
                 case EstadoParametro.Vacio: return 2;
-                case EstadoParametro.Error: return 3; // Puedes usar Error si quieres
+                case EstadoParametro.Error: return 3;
                 case EstadoParametro.Correcto: return 4;
                 default: return 5;
             }

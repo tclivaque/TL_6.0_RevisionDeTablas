@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿// Models/ProcessingResult.cs
+using System.Collections.Generic;
 using System.Linq;
 
 namespace TL60_RevisionDeTablas.Models
@@ -10,14 +11,17 @@ namespace TL60_RevisionDeTablas.Models
         public bool Exitoso { get; set; }
         public string Mensaje { get; set; }
 
-        // (CORREGIDO) Apunta a la nueva propiedad 'DatosCompletos'
+        /// <summary>
+        /// Apunta a 'DatosCompletos', que es True solo si TODAS las auditorías son correctas.
+        /// </summary>
         public int CantidadCorrectos => ElementosProcesados.Count(e => e.DatosCompletos);
 
-        // (CORREGIDO) Apunta a la nueva propiedad 'DatosCompletos'
+        /// <summary>
+        /// Apunta a 'DatosCompletos'.
+        /// </summary>
         public int CantidadACorregir => ElementosProcesados.Count(e => !e.DatosCompletos);
 
-        // (CORREGIDO) Esta propiedad ya no tiene sentido en la nueva lógica
-        public int CantidadConVacios => 0;
+        public int CantidadConVacios => 0; // Esta lógica ya no aplica
 
         public ProcessingResult()
         {
@@ -31,8 +35,7 @@ namespace TL60_RevisionDeTablas.Models
         {
             var resumen = $"RESUMEN:\n\n";
             resumen += $"✅ Correctos: {CantidadCorrectos}\n";
-            resumen += $"🔧 A corregir: {CantidadACorregir}\n";
-            // resumen += $"⚠ Con vacíos: {CantidadConVacios}\n"; // Eliminado
+            resumen += $"🔧 Tablas con Errores: {CantidadACorregir}\n";
             if (Errores.Count > 0)
             {
                 resumen += $"\n❌ Errores: {Errores.Count}\n";

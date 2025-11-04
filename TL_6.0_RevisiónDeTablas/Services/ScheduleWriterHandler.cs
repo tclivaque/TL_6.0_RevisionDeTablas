@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Services/ScheduleUpdateHandler.cs (Anteriormente ScheduleWriterHandler.cs)
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using Autodesk.Revit.DB;
@@ -8,9 +9,9 @@ using TL60_RevisionDeTablas.Models;
 namespace TL60_RevisionDeTablas.Services
 {
     /// <summary>
-    /// Maneja la escritura de filtros usando ExternalEvent
+    /// Maneja la escritura de correcciones usando ExternalEvent
     /// </summary>
-    public class ScheduleWriterHandler : IExternalEventHandler
+    public class ScheduleUpdateHandler : IExternalEventHandler
     {
         private Document _doc;
         private List<ElementData> _elementosData;
@@ -30,23 +31,20 @@ namespace TL60_RevisionDeTablas.Services
             _result = null;
         }
 
-        /// <summary>
-        /// Se ejecuta en el contexto de Revit
-        /// </summary>
         public void Execute(UIApplication app)
         {
             try
             {
-                // Llama a nuestro nuevo Writer
-                var writer = new ScheduleFilterWriter(_doc);
-                _result = writer.WriteFilters(_elementosData);
+                // Llama al nuevo Writer
+                var writer = new ScheduleUpdateWriter(_doc);
+                _result = writer.UpdateSchedules(_elementosData);
             }
             catch (Exception ex)
             {
                 _result = new ProcessingResult
                 {
                     Exitoso = false,
-                    Mensaje = $"Error al escribir filtros: {ex.Message}"
+                    Mensaje = $"Error al escribir correcciones: {ex.Message}"
                 };
                 _result.Errores.Add(ex.Message);
             }
@@ -58,28 +56,28 @@ namespace TL60_RevisionDeTablas.Services
 
         public string GetName()
         {
-            return "ScheduleWriterHandler";
+            return "ScheduleUpdateHandler";
         }
     }
 
     /// <summary>
     /// Clase auxiliar para manejar la escritura asíncrona
     /// </summary>
-    public class ScheduleWriterAsync
+    public class ScheduleUpdateAsync
     {
         private ExternalEvent _externalEvent;
-        private ScheduleWriterHandler _handler;
+        private ScheduleUpdateHandler _handler;
 
-        public ScheduleWriterAsync()
+        public ScheduleUpdateAsync()
         {
-            _handler = new ScheduleWriterHandler();
+            _handler = new ScheduleUpdateHandler();
             _externalEvent = ExternalEvent.Create(_handler);
         }
 
         /// <summary>
-        /// Escribe filtros de forma asíncrona
+        /// Escribe correcciones de forma asíncrona
         /// </summary>
-        public ProcessingResult WriteFiltersAsync(
+        public ProcessingResult UpdateSchedulesAsync(
             Document doc,
             List<ElementData> elementosData)
         {

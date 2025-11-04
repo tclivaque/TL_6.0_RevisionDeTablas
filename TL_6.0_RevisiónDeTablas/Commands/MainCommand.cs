@@ -1,4 +1,5 @@
-﻿using Autodesk.Revit.DB;
+﻿// Commands/MainCommand.cs
+using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.Attributes;
 using System;
@@ -25,27 +26,27 @@ namespace TL60_RevisionDeTablas.Commands
             try
             {
                 // 1. Inicializar Servicios
-                var sheetsService = new GoogleSheetsService();
+                var sheetsService = new GoogleSheetsService(); // Aún se inicializa por si se usa
 
-                // 2. Procesar elementos
+                // 2. Procesar elementos (Lógica de auditoría principal)
                 var processor = new ScheduleProcessor(doc, sheetsService);
                 List<ElementData> elementosData = processor.ProcessElements();
 
-                // 3. Construir datos de diagnóstico
+                // 3. Construir datos de diagnóstico (Ahora crea múltiples filas por elemento)
                 var diagnosticBuilder = new DiagnosticDataBuilder();
                 List<DiagnosticRow> diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
 
                 // 4. Preparar los Writers Asíncronos
-                var writerAsync = new ScheduleWriterAsync();
-                var viewActivator = new ViewActivatorAsync(); // (NUEVO)
+                var writerAsync = new ScheduleUpdateAsync(); // (NOMBRE ACTUALIZADO)
+                var viewActivator = new ViewActivatorAsync();
 
                 // 5. Crear y mostrar ventana Modeless
                 var mainWindow = new MainWindow(
                     diagnosticRows,
                     elementosData,
                     doc,
-                    writerAsync,
-                    viewActivator // (NUEVO) Pasar el segundo handler
+                    writerAsync, // (NOMBRE ACTUALIZADO)
+                    viewActivator
                 );
 
                 mainWindow.Show(); // Modeless
