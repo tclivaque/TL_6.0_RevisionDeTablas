@@ -8,8 +8,8 @@ using TL60_RevisionDeTablas.Models;
 namespace TL60_RevisionDeTablas.Services
 {
     /// <summary>
-    [cite_start]/// Maneja la escritura de filtros usando ExternalEvent [cite: 67]
-                /// </summary>
+    /// Maneja la escritura de filtros usando ExternalEvent
+    /// </summary>
     public class ScheduleWriterHandler : IExternalEventHandler
     {
         private Document _doc;
@@ -17,7 +17,7 @@ namespace TL60_RevisionDeTablas.Services
         private ProcessingResult _result;
         private ManualResetEvent _resetEvent;
 
-        [cite_start] public ProcessingResult Result => _result; [cite: 68]
+        public ProcessingResult Result => _result;
 
         public void SetData(
             Document doc,
@@ -27,12 +27,12 @@ namespace TL60_RevisionDeTablas.Services
             _doc = doc;
             _elementosData = elementosData;
             _resetEvent = resetEvent;
-            [cite_start] _result = null; [cite: 70]
+            _result = null;
         }
 
         /// <summary>
-        [cite_start]/// Se ejecuta en el contexto de Revit [cite: 71]
-                    /// </summary>
+        /// Se ejecuta en el contexto de Revit
+        /// </summary>
         public void Execute(UIApplication app)
         {
             try
@@ -46,25 +46,25 @@ namespace TL60_RevisionDeTablas.Services
                 _result = new ProcessingResult
                 {
                     Exitoso = false,
-                    [cite_start]Mensaje = $"Error al escribir filtros: {ex.Message}"[cite: 73]
+                    Mensaje = $"Error al escribir filtros: {ex.Message}"
                 };
-                [cite_start] _result.Errores.Add(ex.Message); [cite: 74]
+                _result.Errores.Add(ex.Message);
             }
             finally
             {
-                [cite_start] _resetEvent?.Set(); [cite: 75]
+                _resetEvent?.Set();
             }
         }
 
         public string GetName()
         {
-            [cite_start] return "ScheduleWriterHandler"; [cite: 76]
+            return "ScheduleWriterHandler";
         }
     }
 
     /// <summary>
-    [cite_start]/// Clase auxiliar para manejar la escritura asíncrona [cite: 76]
-                /// </summary>
+    /// Clase auxiliar para manejar la escritura asíncrona
+    /// </summary>
     public class ScheduleWriterAsync
     {
         private ExternalEvent _externalEvent;
@@ -73,7 +73,7 @@ namespace TL60_RevisionDeTablas.Services
         public ScheduleWriterAsync()
         {
             _handler = new ScheduleWriterHandler();
-            [cite_start] _externalEvent = ExternalEvent.Create(_handler); [cite: 78]
+            _externalEvent = ExternalEvent.Create(_handler);
         }
 
         /// <summary>
@@ -83,19 +83,19 @@ namespace TL60_RevisionDeTablas.Services
             Document doc,
             List<ElementData> elementosData)
         {
-            [cite_start] using (var resetEvent = new ManualResetEvent(false)) [cite: 79]
+            using (var resetEvent = new ManualResetEvent(false))
             {
                 _handler.SetData(doc, elementosData, resetEvent);
-                [cite_start] _externalEvent.Raise(); [cite: 80]
-                
-                bool completed = resetEvent.WaitOne(TimeSpan.FromSeconds(100)); // Timeout 100s [cite: 81]
+                _externalEvent.Raise();
+
+                bool completed = resetEvent.WaitOne(TimeSpan.FromSeconds(100)); // Timeout 100s
 
                 if (!completed)
                 {
-                    return new ProcessingResult { Exitoso = false, Mensaje = "Timeout: La escritura tardó más de 100 segundos." }; [cite: 83]
+                    return new ProcessingResult { Exitoso = false, Mensaje = "Timeout: La escritura tardó más de 100 segundos." };
                 }
 
-                return _handler.Result ?? new ProcessingResult { Exitoso = false, Mensaje = "Error: No se pudo obtener el resultado." }; [cite: 85]
+                return _handler.Result ?? new ProcessingResult { Exitoso = false, Mensaje = "Error: No se pudo obtener el resultado." };
             }
         }
     }

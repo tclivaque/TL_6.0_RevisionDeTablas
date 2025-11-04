@@ -15,26 +15,26 @@ namespace TL60_RevisionDeTablas.Services
 
         public ScheduleFilterWriter(Document doc)
         {
-            [cite_start] _doc = doc; [cite: 207]
+            _doc = doc;
         }
 
         public ProcessingResult WriteFilters(List<ElementData> elementosData)
         {
-            [cite_start] var result = new ProcessingResult { Exitoso = false }; [cite: 209]
+            var result = new ProcessingResult { Exitoso = false };
             int tablasCorregidas = 0;
 
             using (Transaction trans = new Transaction(_doc, "Corregir Filtros de Tablas"))
             {
                 try
                 {
-                    [cite_start] trans.Start(); [cite: 211]
+                    trans.Start();
 
                     foreach (var elementData in elementosData)
                     {
-                        [cite_start] if (elementData.ElementId == null || elementData.ElementId == ElementId.InvalidElementId) [cite: 212]
+                        if (elementData.ElementId == null || elementData.ElementId == ElementId.InvalidElementId)
                             continue;
 
-                        [cite_start] ViewSchedule view = _doc.GetElement(elementData.ElementId) as ViewSchedule; [cite: 213]
+                        ViewSchedule view = _doc.GetElement(elementData.ElementId) as ViewSchedule;
                         if (view == null) continue;
 
                         ScheduleDefinition definition = view.Definition;
@@ -42,43 +42,62 @@ namespace TL60_RevisionDeTablas.Services
                         // 1. Limpiar filtros existentes
                         definition.ClearFilters();
 
-                        // 2. Obtener el Assembly Code y Empresa
-                        string assemblyCode = elementData.CodigoIdentificacion;
-                        string empresa = "RNG"; // Definido en la lógica
-
-                        // 3. Encontrar los campos (Fields)
-                        ScheduleField codeField = FindField(definition, "Assembly Code");
-                        ScheduleField empresaField = FindField(definition, "EMPRESA");
-
-                        if (codeField == null || empresaField == null)
+                        // 2. Iterar y añadir los filtros correctos
+                        foreach (var filtroInfo in elementData.FiltrosCorrectos)
                         {
-                            result.Errores.Add($"Tabla '{elementData.Nombre}' no tiene los campos 'Assembly Code' o 'EMPRESA' para filtrar.");
-                            continue;
+                            ScheduleField field = FindField(definition, filtroInfo.FieldName);
+                            if (field == null)
+                            {
+                                result.Errores.Add($"Tabla '{elementData.Nombre}' no tiene el campo '{filtroInfo.FieldName}' para filtrar.");
+                                continue;
+                            }
+
+                            // (¡¡¡CORREGIDO!!!)
+                            // Crear el filtro basado en el TIPO del valor
+                            ScheduleFilter newFilter;
+                            if (filtroInfo.Value is string s)
+                            {
+                                newFilter = new ScheduleFilter(field.FieldId, filtroInfo.FilterType, s);
+                            }
+                            else if (filtroInfo.Value is double d)
+                            {
+                                newFilter = new ScheduleFilter(field.FieldId, filtroInfo.FilterType, d);
+                            }
+                            else if (filtroInfo.Value is int i)
+                            {
+                                // API 2021 no tiene constructor de Int, usar Double
+                                newFilter = new ScheduleFilter(field.FieldId, filtroInfo.FilterType, (double)i);
+                            }
+                            else if (filtroInfo.Value is ElementId id)
+                            {
+                                // (CORREGIDO) Esta es la sobrecarga correcta para ElementId
+                                newFilter = new ScheduleFilter(field.FieldId, filtroInfo.FilterType, id);
+                            }
+                            else
+                            {
+                                result.Errores.Add($"Valor de filtro no compatible para '{filtroInfo.FieldName}' en tabla '{elementData.Nombre}'.");
+                                continue;
+                            }
+
+                            definition.AddFilter(newFilter);
                         }
-
-                        // 4. Crear y añadir nuevos filtros EN ORDEN
-                        ScheduleFilter codeFilter = new ScheduleFilter(codeField.FieldId, ScheduleFilterType.Equal, assemblyCode);
-                        ScheduleFilter empresaFilter = new ScheduleFilter(empresaField.FieldId, ScheduleFilterType.Equal, empresa);
-
-                        definition.AddFilter(codeFilter);
-                        definition.AddFilter(empresaFilter);
 
                         tablasCorregidas++;
                     }
 
-                    [cite_start] trans.Commit(); [cite: 223]
+                    trans.Commit();
                     result.Exitoso = true;
-                    [cite_start] result.Mensaje = $"Se corrigieron los filtros de {tablasCorregidas} tablas exitosamente."; [cite: 225]
+                    result.Mensaje = $"Se corrigieron los filtros de {tablasCorregidas} tablas exitosamente.";
                 }
                 catch (Exception ex)
                 {
                     trans.RollBack();
                     result.Exitoso = false;
-                    [cite_start] result.Mensaje = $"Error al escribir filtros: {ex.Message}"; [cite: 227]
+                    result.Mensaje = $"Error al escribir filtros: {ex.Message}";
                     result.Errores.Add(ex.Message);
                 }
             }
-            [cite_start] return result; [cite: 228]
+            return result;
         }
 
         /// <summary>

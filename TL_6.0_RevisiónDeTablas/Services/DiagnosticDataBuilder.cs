@@ -17,49 +17,36 @@ namespace TL60_RevisionDeTablas.Services
             foreach (var elementData in elementosData)
             {
                 string idMostrar = elementData.ElementId?.IntegerValue.ToString() ?? "N/A";
-
-                // Parámetros a corregir (AZUL)
-                foreach (var paramActualizar in elementData.ParametrosActualizar)
+                var row = new DiagnosticRow
                 {
-                    var row = new DiagnosticRow
-                    {
-                        ElementId = elementData.ElementId,
-                        IdMostrar = idMostrar,
-                        CodigoIdentificacion = elementData.CodigoIdentificacion,
-                        Descripcion = elementData.Nombre,
-                        NombreParametro = paramActualizar.Key, // "Filtros"
+                    ElementId = elementData.ElementId,
+                    IdMostrar = idMostrar,
+                    CodigoIdentificacion = elementData.CodigoIdentificacion,
+                    Descripcion = elementData.Nombre,
+                    NombreParametro = "Filtros", // Siempre será "Filtros"
+                    ValorActual = elementData.FiltrosActualesString,
+                    ValorCorregido = elementData.FiltrosCorrectosString,
+                    Mensaje = string.Join("\n", elementData.Mensajes)
+                };
 
-                        // (MODIFICADO) Leer de nuestro nuevo diccionario
-                        ValorActual = elementData.ParametrosActuales.ContainsKey(paramActualizar.Key)
-                                        ? elementData.ParametrosActuales[paramActualizar.Key]
-                                        : "(Error al leer valor actual)",
-
-                        ValorCorregido = paramActualizar.Value,
-                        Estado = EstadoParametro.Corregir,
-                        Mensaje = string.Join("\n", elementData.Mensajes) // Mostrar mensajes
-                    };
-                    rows.Add(row);
+                // Asignar estado
+                if (elementData.DatosCompletos)
+                {
+                    row.Estado = EstadoParametro.Correcto;
+                }
+                else if (elementData.Mensajes.Count > 0)
+                {
+                    row.Estado = EstadoParametro.Corregir; // Azul (o Rojo si prefieres)
+                }
+                else
+                {
+                    row.Estado = EstadoParametro.Vacio; // Naranja (si no hay mensaje)
                 }
 
-                // Parámetros correctos (VERDE)
-                foreach (var paramCorrecto in elementData.ParametrosCorrectos)
-                {
-                    var row = new DiagnosticRow
-                    {
-                        ElementId = elementData.ElementId,
-                        IdMostrar = idMostrar,
-                        CodigoIdentificacion = elementData.CodigoIdentificacion,
-                        Descripcion = elementData.Nombre,
-                        NombreParametro = paramCorrecto.Key,
-                        ValorActual = paramCorrecto.Value,
-                        ValorCorregido = paramCorrecto.Value,
-                        Estado = EstadoParametro.Correcto
-                    };
-                    rows.Add(row);
-                }
+                rows.Add(row);
             }
 
-            // Ordenar: CORREGIR → CORRECTO
+            // Ordenar: CORREGIR → VACÍO → CORRECTO
             rows = rows.OrderBy(r => GetEstadoOrder(r.Estado))
                       .ThenBy(r => r.ElementId?.IntegerValue ?? 0)
                       .ToList();
@@ -78,12 +65,10 @@ namespace TL60_RevisionDeTablas.Services
             {
                 case EstadoParametro.Corregir: return 1;
                 case EstadoParametro.Vacio: return 2;
-                case EstadoParametro.Error: return 3;
+                case EstadoParametro.Error: return 3; // Puedes usar Error si quieres
                 case EstadoParametro.Correcto: return 4;
                 default: return 5;
             }
         }
-
-        // (El método GetActualValue de la plantilla se eliminó porque ya no es necesario)
     }
 }

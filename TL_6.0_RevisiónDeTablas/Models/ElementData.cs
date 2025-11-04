@@ -9,49 +9,42 @@ namespace TL60_RevisionDeTablas.Models
     public class ElementData
     {
         public ElementId ElementId { get; set; }
-        [cite: 107]
         public Element Element { get; set; }
-        [cite: 108]
         public string Nombre { get; set; }
-        [cite: 109]
         public string Categoria { get; set; }
-        [cite: 110]
         public string Grupo { get; set; }
-        [cite: 111]
         public string CodigoIdentificacion { get; set; }
-        [cite: 112]
         public bool DatosCompletos { get; set; }
-        [cite: 113]
 
         /// <summary>
-        /// Clave: Nombre del parámetro ("Filtros")
-        /// Valor: Valor CORREGIDO (string multi-línea)
+        /// (NUEVO) Almacena la lista de filtros que se deben ESCRIBIR
         /// </summary>
-        public Dictionary<string, string> ParametrosActualizar { get; set; }
-        [cite: 114]
+        public List<ScheduleFilterInfo> FiltrosCorrectos { get; set; }
 
         /// <summary>
-        /// (MODIFICADO)
-        /// Clave: Nombre del parámetro ("Filtros")
-        /// Valor: Valor ACTUAL (string multi-línea)
+        /// (NUEVO) Almacena el valor actual de los filtros como string
         /// </summary>
-        public Dictionary<string, string> ParametrosActuales { get; set; }
+        public string FiltrosActualesString { get; set; }
 
-        public List<string> ParametrosVacios { get; set; }
-        [cite: 115]
-        public Dictionary<string, string> ParametrosCorrectos { get; set; }
-        [cite: 116]
+        /// <summary>
+        /// (NUEVO) Almacena el valor correcto de los filtros como string
+        /// </summary>
+        public string FiltrosCorrectosString { get; set; }
+
         public List<string> Mensajes { get; set; }
-        [cite: 117]
+
+        // --- Propiedades antiguas (ya no se usan) ---
+        // public Dictionary<string, string> ParametrosActualizar { get; set; }
+        // public Dictionary<string, string> ParametrosActuales { get; set; }
+        // public List<string> ParametrosVacios { get; set; }
+        // public Dictionary<string, string> ParametrosCorrectos { get; set; }
+
 
         public ElementData()
         {
-            ParametrosActualizar = new Dictionary<string, string>();
-            ParametrosActuales = new Dictionary<string, string>(); // Inicializado
-            ParametrosVacios = new List<string>();
-            ParametrosCorrectos = new Dictionary<string, string>();
+            FiltrosCorrectos = new List<ScheduleFilterInfo>();
             Mensajes = new List<string>();
-            [cite_start] DatosCompletos = false; [cite: 118]
+            DatosCompletos = false;
         }
     }
 }

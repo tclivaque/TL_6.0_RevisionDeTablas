@@ -33,20 +33,22 @@ namespace TL60_RevisionDeTablas.Commands
 
                 // 3. Construir datos de diagnóstico
                 var diagnosticBuilder = new DiagnosticDataBuilder();
-                [cite_start] List<DiagnosticRow> diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData); [cite: 104, 257]
+                List<DiagnosticRow> diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
 
-                // 4. Preparar el Writer Asíncrono
+                // 4. Preparar los Writers Asíncronos
                 var writerAsync = new ScheduleWriterAsync();
+                var viewActivator = new ViewActivatorAsync(); // (NUEVO)
 
                 // 5. Crear y mostrar ventana Modeless
                 var mainWindow = new MainWindow(
                     diagnosticRows,
                     elementosData,
                     doc,
-                    writerAsync // Pasar el writer a la ventana
+                    writerAsync,
+                    viewActivator // (NUEVO) Pasar el segundo handler
                 );
 
-                mainWindow.Show(); // Modeless [cite: 105]
+                mainWindow.Show(); // Modeless
 
                 return Result.Succeeded;
             }

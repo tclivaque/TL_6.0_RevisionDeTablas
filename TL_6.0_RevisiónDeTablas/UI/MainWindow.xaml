@@ -1,8 +1,8 @@
-﻿ ```xml<Window x:Class="TL60_RevisionDeTablas.UI.MainWindow"
-        xmlns="[http://schemas.microsoft.com/winfx/2006/xaml/presentation](http://schemas.microsoft.com/winfx/2006/xaml/presentation)"
-        xmlns:x="[http://schemas.microsoft.com/winfx/2006/xaml](http://schemas.microsoft.com/winfx/2006/xaml)"
+﻿<Window x:Class="TL60_RevisionDeTablas.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="TL 6.0 - Diagnóstico de Filtros de Tablas" 
-        Height="700" Width="1300"
+        Height="700" Width="1400"
         WindowStartupLocation="CenterScreen">
 
     <Grid Margin="10">
@@ -27,23 +27,31 @@
                   GridLinesVisibility="All">
 
             <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Abrir" Width="50">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Name="AbrirViewButton" 
+                                    Content="👁️" 
+                                    FontSize="16" 
+                                    HorizontalAlignment="Center" 
+                                    VerticalAlignment="Center"
+                                    Click="AbrirViewButton_Click"
+                                    BorderThickness="0"
+                                    Background="Transparent"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
                 <DataGridTextColumn Header="#" Binding="{Binding NumeroFila}" Width="50"/>
-
                 <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80"/>
-
                 <DataGridTextColumn Header="Assembly Code" Binding="{Binding CodigoIdentificacion}" Width="150"/>
-
                 <DataGridTextColumn Header="Nombre de Tabla" Binding="{Binding Descripcion}" Width="250"/>
-
                 <DataGridTextColumn Header="Encabezado" Binding="{Binding NombreParametro}" Width="120"/>
 
                 <DataGridTemplateColumn Header="Valor Actual" Width="250">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding ValorActual}" 
-                                       TextWrapping="Wrap" 
-                                       Margin="5"
-                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ValorActual}" TextWrapping="Wrap" Margin="5" VerticalAlignment="Center"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -51,16 +59,12 @@
                 <DataGridTemplateColumn Header="Valor Correcto" Width="250">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding ValorCorregido}" 
-                                       TextWrapping="Wrap" 
-                                       Margin="5"
-                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ValorCorregido}" TextWrapping="Wrap" Margin="5" VerticalAlignment="Center"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
                 <DataGridTextColumn Header="Mensaje" Binding="{Binding Mensaje}" Width="*"/>
-
             </DataGrid.Columns>
 
             <DataGrid.RowStyle>
@@ -83,17 +87,25 @@
             </DataGrid.RowStyle>
         </DataGrid>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Name="CorregirButton" 
-                    Content="Corregir Filtros" 
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+            <Button Name="ExportarButton" 
+                    Content="Exportar a Excel" 
                     Width="150" Height="35"
-                    Margin="0,0,10,0"
-                    Click="CorregirButton_Click"/>
+                    HorizontalAlignment="Left"
+                    Click="ExportarButton_Click"/>
 
-            <Button Name="CerrarButton" 
-                    Content="Cerrar" 
-                    Width="100" Height="35"
-                    Click="CerrarButton_Click"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Width="700">
+                <Button Name="CorregirButton" 
+                        Content="Corregir Filtros" 
+                        Width="150" Height="35"
+                        Margin="0,0,10,0"
+                        Click="CorregirButton_Click"/>
+
+                <Button Name="CerrarButton" 
+                        Content="Cerrar" 
+                        Width="100" Height="35"
+                        Click="CerrarButton_Click"/>
+            </StackPanel>
         </StackPanel>
     </Grid>
 </Window>

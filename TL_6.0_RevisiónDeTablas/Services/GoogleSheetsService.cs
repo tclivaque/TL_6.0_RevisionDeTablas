@@ -1,13 +1,11 @@
-﻿using Google.Apis.Auth.OAuth2;
-using Google.Apis.Services;
-using Google.Apis.Sheets.v4;
-using Google.Apis.Sheets.v4.Data;
-using Newtonsoft.Json.Linq;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.Runtime.InteropServices.ComTypes;
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Sheets.v4;
+using Google.Apis.Sheets.v4.Data;
+using Google.Apis.Services;
 
 namespace TL60_RevisionDeTablas.Services
 {
@@ -31,7 +29,7 @@ namespace TL60_RevisionDeTablas.Services
             try
             {
                 GoogleCredential credential;
-                [cite_start] using (var stream = new FileStream(CREDENTIALS_PATH, FileMode.Open, FileAccess.Read)) [cite: 239]
+                using (var stream = new FileStream(CREDENTIALS_PATH, FileMode.Open, FileAccess.Read))
                 {
                     credential = GoogleCredential.FromStream(stream)
                         .CreateScoped(new[] { SheetsService.Scope.Spreadsheets });
@@ -40,19 +38,15 @@ namespace TL60_RevisionDeTablas.Services
                 _service = new SheetsService(new BaseClientService.Initializer()
                 {
                     HttpClientInitializer = credential,
-                    [cite_start]// IMPORTANTE: NO usar acentos 
+                    // IMPORTANTE: NO usar acentos
                     ApplicationName = "TL60RevisionDeTablas"
                 });
             }
             catch (Exception ex)
             {
-                [cite_start] throw new Exception($"Error al inicializar Google Sheets. Asegúrate que el archivo JSON esté en la carpeta del DLL: {ex.Message}", ex); [cite: 242, 327]
+                throw new Exception($"Error al inicializar Google Sheets. Asegúrate que el archivo JSON esté en la carpeta del DLL: {ex.Message}", ex);
             }
         }
-
-        [cite_start]// ... (El resto de métodos ReadData, WriteData, GetCellValue son idénticos a la plantilla) ... [cite: 243-255]
-
-        [cite_start]// (Pegar aquí los métodos ReadData, WriteData y GetCellValue de la plantilla [cite: 243-255])
 
         /// <summary>
         /// Lee datos de una hoja
@@ -61,13 +55,13 @@ namespace TL60_RevisionDeTablas.Services
         {
             try
             {
-                [cite_start] var request = _service.Spreadsheets.Values.Get(spreadsheetId, range); [cite: 244]
+                var request = _service.Spreadsheets.Values.Get(spreadsheetId, range);
                 var response = request.Execute();
                 return response.Values ?? new List<IList<object>>();
             }
             catch (Exception ex)
             {
-                [cite_start] throw new Exception($"Error al leer datos de Google Sheets: {ex.Message}", ex); [cite: 245]
+                throw new Exception($"Error al leer datos de Google Sheets: {ex.Message}", ex);
             }
         }
 
@@ -80,13 +74,13 @@ namespace TL60_RevisionDeTablas.Services
         {
             try
             {
-                [cite_start] var dataToWrite = new List<ValueRange>(); [cite: 247]
+                var dataToWrite = new List<ValueRange>();
                 foreach (var kvp in cellValues)
                 {
                     var valueRange = new ValueRange
                     {
                         Range = kvp.Key,
-                        [cite_start]Values = new List<IList<object>> { new List<object> { kvp.Value } }[cite: 249]
+                        Values = new List<IList<object>> { new List<object> { kvp.Value } }
                     };
                     dataToWrite.Add(valueRange);
                 }
@@ -95,18 +89,17 @@ namespace TL60_RevisionDeTablas.Services
                 {
                     Data = dataToWrite,
                     ValueInputOption = "RAW"
-                [cite_start]
-                }; [cite: 251]
-                
+                };
+
                 var request = _service.Spreadsheets.Values.BatchUpdate(
                     batchRequest,
                     spreadsheetId
                 );
-                [cite_start] request.Execute(); [cite: 253]
+                request.Execute();
             }
             catch (Exception ex)
             {
-                [cite_start] throw new Exception($"Error al escribir datos en Google Sheets: {ex.Message}", ex); [cite: 253]
+                throw new Exception($"Error al escribir datos en Google Sheets: {ex.Message}", ex);
             }
         }
 
@@ -117,7 +110,7 @@ namespace TL60_RevisionDeTablas.Services
         {
             if (row == null || columnIndex >= row.Count)
                 return string.Empty;
-            [cite_start] return row[columnIndex]?.ToString()?.Trim() ?? string.Empty; [cite: 255]
+            return row[columnIndex]?.ToString()?.Trim() ?? string.Empty;
         }
     }
 }
