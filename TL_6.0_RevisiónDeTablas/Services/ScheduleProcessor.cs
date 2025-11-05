@@ -250,18 +250,45 @@ namespace TL60_RevisionDeTablas.Services
             }
 
             // ========================================
-            // PASO 4: Finalizar
+            // PASO 4: Comparar orden y valores
+            // ========================================
+            bool ordenCorrecto = true;
+
+            // Comparar cada filtro actual con su posición esperada
+            for (int i = 0; i < filtrosActuales.Count; i++)
+            {
+                var actualInfo = GetFilterInfo(filtrosActuales[i], definition);
+                var correctoInfo = filtrosCorrectosInfo[i];
+
+                if (actualInfo.FieldName != correctoInfo.FieldName ||
+                    actualInfo.FilterType != correctoInfo.FilterType ||
+                    !AreFilterValuesEqual(actualInfo.Value, correctoInfo.Value))
+                {
+                    ordenCorrecto = false;
+                    if (item.Estado != EstadoParametro.Error)
+                        item.Estado = EstadoParametro.Corregir;
+                    break;
+                }
+            }
+
+            // ========================================
+            // PASO 5: Finalizar
             // ========================================
             item.ValorActual = GetFiltersAsString(definition, filtrosActuales);
             item.ValorCorregido = string.Join("\n", filtrosCorrectosInfo.Select(f => f.AsString()));
 
-            // Si no hay errores, es correcto
+            // Si no hay errores Y el orden es correcto, es correcto
             if (item.Estado != EstadoParametro.Error &&
                 item.Estado != EstadoParametro.Corregir &&
-                assemblyCodeCorrecto && empresaCorrecta)
+                assemblyCodeCorrecto && empresaCorrecta && ordenCorrecto)
             {
                 item.Estado = EstadoParametro.Correcto;
                 item.Mensaje = "Filtros correctos.";
+            }
+            else if (!ordenCorrecto && item.Estado != EstadoParametro.Error)
+            {
+                item.Estado = EstadoParametro.Corregir;
+                item.Mensaje = "Los filtros no están en el orden correcto o tienen valores diferentes.";
             }
 
             // Guardar lista para corrección (si es corregible)
@@ -588,7 +615,22 @@ namespace TL60_RevisionDeTablas.Services
             return null;
         }
 
+        private bool AreFilterValuesEqual(object value1, object value2)
+        {
+            if (value1 == null && value2 == null) return true;
+            if (value1 == null || value2 == null) return false;
 
+            // Comparar strings (ignora mayúsculas)
+            if (value1 is string s1 && value2 is string s2)
+                return s1.Equals(s2, StringComparison.OrdinalIgnoreCase);
+
+            // Comparar ElementId
+            if (value1 is ElementId id1 && value2 is ElementId id2)
+                return id1.IntegerValue == id2.IntegerValue;
+
+            // Comparar otros tipos directamente
+            return value1.Equals(value2);
+        }
 
 
         #endregion
