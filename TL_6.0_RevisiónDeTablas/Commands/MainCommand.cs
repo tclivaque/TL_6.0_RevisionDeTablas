@@ -5,6 +5,7 @@ using Autodesk.Revit.Attributes;
 using System;
 using System.Collections.Generic;
 using System.Linq; // Necesario para .ToList()
+using System.IO; // (NUEVO) Necesario para Path
 using TL60_RevisionDeTablas.Models;
 using TL60_RevisionDeTablas.Services;
 using TL60_RevisionDeTablas.UI;
@@ -15,6 +16,9 @@ namespace TL60_RevisionDeTablas.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class MainCommand : IExternalCommand
     {
+        // (NUEVO) ID del Spreadsheet de donde se leerán las matrices
+        private const string SPREADSHEET_ID = "14bYBONt68lfM-sx6iIJxkYExXS0u7sdgijEScL3Ed3Y";
+
         public Result Execute(
             ExternalCommandData commandData,
             ref string message,
@@ -30,6 +34,11 @@ namespace TL60_RevisionDeTablas.Commands
                 var sheetsService = new GoogleSheetsService();
                 var processor = new ScheduleProcessor(doc, sheetsService);
 
+                // (NUEVO) Inicializar el servicio de clasificación Manual/Revit
+                string docTitle = Path.GetFileNameWithoutExtension(doc.Title);
+                var manualScheduleService = new ManualScheduleService(sheetsService, docTitle);
+                manualScheduleService.LoadClassificationData(SPREADSHEET_ID); // Lee G-Sheets
+
                 var elementosData = new List<ElementData>();
 
                 // 2. Obtener todas las tablas
@@ -39,31 +48,44 @@ namespace TL60_RevisionDeTablas.Commands
                     .Cast<ViewSchedule>();
 
                 // ==========================================================
-                // ===== INICIO DE LÓGICA DE BIFURCACIÓN =====
+                // ===== INICIO DE LÓGICA DE BIFURCACIÓN (MODIFICADA) =====
                 // ==========================================================
 
                 foreach (ViewSchedule view in allSchedules)
                 {
                     if (view == null || view.Definition == null) continue;
 
-                    // PRIMER FILTRO: El nombre de la tabla debe empezar con "C."
+                    // PRIMER FILTRO (Sin cambios): El nombre debe empezar con "C."
                     if (view.Name.StartsWith("C.", StringComparison.OrdinalIgnoreCase))
                     {
-                        Parameter groupParam = view.LookupParameter("GRUPO DE VISTA");
-                        string groupValue = groupParam?.AsString() ?? string.Empty;
+                        // (NUEVO) PASO 2: Clasificar REVIT vs MANUAL
 
-                        // SEGUNDO FILTRO: Revisar "GRUPO DE VISTA"
-                        if (groupValue.StartsWith("C.", StringComparison.OrdinalIgnoreCase))
+                        // Obtener el Assembly Code del nombre de la tabla
+                        string assemblyCode = view.Name.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim();
+                        string scheduleType = manualScheduleService.GetScheduleType(assemblyCode);
+
+                        if (scheduleType.Equals("MANUAL", StringComparison.OrdinalIgnoreCase))
                         {
-                            // CASO A: "Tabla de Metrados"
-                            // Ejecutar la auditoría completa
-                            elementosData.Add(processor.ProcessSingleElement(view));
+                            // CASO NUEVO: Es MANUAL, crear trabajo de reclasificación
+                            elementosData.Add(processor.CreateManualRenamingJob(view));
                         }
                         else
                         {
-                            // CASO B: "Tabla de Soporte"
-                            // Generar un trabajo de renombrado y corrección de parámetros
-                            elementosData.Add(processor.CreateRenamingJob(view));
+                            // CASO "REVIT" (o no encontrado): Ejecutar lógica original
+                            // SEGUNDO FILTRO (Lógica original): Revisar "GRUPO DE VISTA"
+                            Parameter groupParam = view.LookupParameter("GRUPO DE VISTA");
+                            string groupValue = groupParam?.AsString() ?? string.Empty;
+
+                            if (groupValue.StartsWith("C.", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // CASO A: "Tabla de Metrados" -> Auditar
+                                elementosData.Add(processor.ProcessSingleElement(view));
+                            }
+                            else
+                            {
+                                // CASO B: "Tabla de Soporte" -> Renombrar
+                                elementosData.Add(processor.CreateRenamingJob(view));
+                            }
                         }
                     }
                 }

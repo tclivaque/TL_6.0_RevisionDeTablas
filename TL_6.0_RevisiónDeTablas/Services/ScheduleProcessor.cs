@@ -548,6 +548,55 @@ namespace TL60_RevisionDeTablas.Services
             return elementData;
         }
 
+        // =================================================================
+        // ===== (NUEVO) MÉTODO #3: Corrección de "Tablas de Metrado Manual" =====
+        // =================================================================
+
+        /// <summary>
+        /// (NUEVO) Crea un trabajo de corrección para tablas de "METRADO MANUAL"
+        /// </summary>
+        public ElementData CreateManualRenamingJob(ViewSchedule view)
+        {
+            var elementData = new ElementData
+            {
+                ElementId = view.Id,
+                Element = view,
+                Nombre = view.Name,
+                Categoria = view.Category?.Name ?? "Tabla de Planificación",
+                CodigoIdentificacion = view.Name.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim(),
+                DatosCompletos = false // Siempre requiere corrección
+            };
+
+            string nombreActual = view.Name;
+            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
+
+            // Los nuevos valores que solicitaste
+            string nombreCorregido = nombreActual; // El nombre no cambia
+            string grupoCorregido = "REVISAR";
+            string subGrupoCorregido = "METRADO MANUAL";
+
+            var jobData = new RenamingJobData
+            {
+                NuevoNombre = nombreCorregido,
+                NuevoGrupoVista = grupoCorregido,
+                NuevoSubGrupoVista = subGrupoCorregido
+            };
+
+            var auditItem = new AuditItem
+            {
+                AuditType = "CLASIFICACIÓN (MANUAL)", // Nuevo tipo de auditoría
+                IsCorrectable = true,
+                Estado = EstadoParametro.Corregir,
+                Mensaje = "Tabla de Metrado Manual. Se reclasificará.",
+                ValorActual = $"Grupo: {grupoActual}",
+                ValorCorregido = $"Grupo: {grupoCorregido}\nSubGrupo: {subGrupoCorregido}",
+                Tag = jobData // Adjuntar los datos del trabajo
+            };
+
+            elementData.AuditResults.Add(auditItem);
+            return elementData;
+        }
+
         #region Helpers de Filtros
 
         private ScheduleFilterInfo GetFilterInfo(ScheduleFilter filter, ScheduleDefinition def)

@@ -113,6 +113,7 @@
     <Compile Include="Services\DiagnosticDataBuilder.cs" />
     <Compile Include="Services\ExcelExportService.cs" />
     <Compile Include="Services\GoogleSheetsService.cs" />
+    <Compile Include="Services\ManualScheduleService.cs" />
     <Compile Include="Services\ScheduleUpdateWriter.cs" />
     <Compile Include="Services\ScheduleProcessor.cs" />
     <Compile Include="Services\ScheduleWriterHandler.cs" />

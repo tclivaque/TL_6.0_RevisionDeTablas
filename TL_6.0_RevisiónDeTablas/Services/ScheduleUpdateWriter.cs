@@ -84,7 +84,7 @@ namespace TL60_RevisionDeTablas.Services
                         // ==========================================================
                         // ===== (NUEVO) 4. Ejecutar RENOMBRADO DE TABLA =====
                         // ==========================================================
-                        var renameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "CLASIFICACIÓN" && a.IsCorrectable);
+                        var renameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType.StartsWith("CLASIFICACIÓN") && a.IsCorrectable);
                         if (renameAudit != null)
                         {
                             var jobData = renameAudit.Tag as RenamingJobData;
