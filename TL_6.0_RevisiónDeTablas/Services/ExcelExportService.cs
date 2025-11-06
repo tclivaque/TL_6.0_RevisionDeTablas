@@ -12,7 +12,9 @@ namespace TL60_RevisionDeTablas.Services
         {
             // (REVERTIDO) Volver al código original.
             // Esto dará una advertencia, pero compilará.
+#pragma warning disable CS0618 // Deshabilitar advertencia de obsoleto
             ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+#pragma warning restore CS0618 // Restaurar advertencia
         }
 
         public byte[] ExportToExcel(List<DiagnosticRow> diagnosticRows)

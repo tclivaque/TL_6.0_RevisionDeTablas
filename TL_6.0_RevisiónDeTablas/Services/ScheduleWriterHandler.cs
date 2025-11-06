@@ -86,11 +86,15 @@ namespace TL60_RevisionDeTablas.Services
                 _handler.SetData(doc, elementosData, resetEvent);
                 _externalEvent.Raise();
 
+                // ==========================================================
+                // ===== CAMBIO AQUÍ: Timeout extendido a 600 segundos =====
+                // ==========================================================
                 bool completed = resetEvent.WaitOne(TimeSpan.FromSeconds(600)); // Timeout 600s
+                // ==========================================================
 
                 if (!completed)
                 {
-                    return new ProcessingResult { Exitoso = false, Mensaje = "Timeout: La escritura tardó más de 600 segundos." };
+                    return new ProcessingResult { Exitoso = false, Mensaje = "Timeout: La escritura tardó más de 10 minutos." };
                 }
 
                 return _handler.Result ?? new ProcessingResult { Exitoso = false, Mensaje = "Error: No se pudo obtener el resultado." };

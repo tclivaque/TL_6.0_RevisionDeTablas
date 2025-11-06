@@ -7,9 +7,6 @@ using TL60_RevisionDeTablas.Models;
 
 namespace TL60_RevisionDeTablas.Services
 {
-    /// <summary>
-    /// Escribe TODAS las correcciones (Filtros, Contenido, Columnas, Renombrado)
-    /// </summary>
     public class ScheduleUpdateWriter
     {
         private readonly Document _doc;
@@ -22,11 +19,13 @@ namespace TL60_RevisionDeTablas.Services
         public ProcessingResult UpdateSchedules(List<ElementData> elementosData)
         {
             var result = new ProcessingResult { Exitoso = false };
-            int tablasCorregidas = 0;
+            int tablasModificadas = 0;
             int filtrosCorregidos = 0;
             int contenidosCorregidos = 0;
-            int columnasCorregidas = 0;
-            int tablasRenombradas = 0; // (NUEVO)
+            int tablasReclasificadas = 0;
+            int nombresCorregidos = 0; // (NUEVO)
+            int linksIncluidos = 0; // (NUEVO)
+            int columnasCorregidas = 0; // (Solo para consistencia, aunque ahora es advertencia)
 
             using (Transaction trans = new Transaction(_doc, "Corregir Auditoría de Tablas"))
             {
@@ -45,7 +44,43 @@ namespace TL60_RevisionDeTablas.Services
                         ScheduleDefinition definition = view.Definition;
                         bool tablaModificada = false;
 
-                        // --- 1. Corregir FILTROS (Solo si es corregible) ---
+                        // ==========================================================
+                        // ===== 1. Ejecutar RENOMBRADO DE TABLA (VIEW NAME) =====
+                        // ==========================================================
+                        var viewNameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "VIEW NAME" && a.IsCorrectable);
+                        if (viewNameAudit != null)
+                        {
+                            string nuevoNombre = viewNameAudit.Tag as string;
+                            if (!string.IsNullOrEmpty(nuevoNombre) && view.Name != nuevoNombre)
+                            {
+                                try
+                                {
+                                    view.Name = nuevoNombre;
+                                    nombresCorregidos++;
+                                    tablaModificada = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    result.Errores.Add($"Error al renombrar tabla '{elementData.Nombre}': {ex.Message}");
+                                }
+                            }
+                        }
+
+                        // ==========================================================
+                        // ===== 2. Ejecutar RENOMBRADO DE CLASIFICACIÓN (WIP, MANUAL, SOPORTE, COPIA) =====
+                        // ==========================================================
+                        var renameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType.StartsWith("CLASIFICACIÓN") && a.IsCorrectable);
+                        if (renameAudit != null)
+                        {
+                            var jobData = renameAudit.Tag as RenamingJobData;
+                            if (jobData != null && RenameAndReclassify(view, jobData, result.Errores))
+                            {
+                                tablasReclasificadas++;
+                                tablaModificada = true;
+                            }
+                        }
+
+                        // --- 3. Corregir FILTROS ---
                         var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTRO" && a.IsCorrectable);
                         if (filterAudit != null)
                         {
@@ -57,7 +92,7 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // --- 2. Corregir CONTENIDO (Itemize) ---
+                        // --- 4. Corregir CONTENIDO (Itemize) ---
                         var contentAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "CONTENIDO" && a.IsCorrectable);
                         if (contentAudit != null)
                         {
@@ -69,7 +104,20 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // --- 3. Corregir COLUMNAS (Encabezados) ---
+                        // --- (NUEVO) 5. Corregir INCLUDE LINKS ---
+                        var linksAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "LINKS" && a.IsCorrectable);
+                        if (linksAudit != null)
+                        {
+                            if (!definition.IncludeLinkedFiles)
+                            {
+                                definition.IncludeLinkedFiles = true;
+                                linksIncluidos++;
+                                tablaModificada = true;
+                            }
+                        }
+
+                        // --- 6. Corregir COLUMNAS (Encabezados) ---
+                        // (Aunque es Advertencia, si tuviera un Tag 'Corregible', se ejecutaría)
                         var columnAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "COLUMNAS" && a.IsCorrectable);
                         if (columnAudit != null)
                         {
@@ -81,21 +129,6 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // ==========================================================
-                        // ===== (NUEVO) 4. Ejecutar RENOMBRADO DE TABLA =====
-                        // ==========================================================
-                        var renameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType.StartsWith("CLASIFICACIÓN") && a.IsCorrectable);
-                        if (renameAudit != null)
-                        {
-                            var jobData = renameAudit.Tag as RenamingJobData;
-                            if (jobData != null && RenameAndReclassify(view, jobData, result.Errores))
-                            {
-                                tablasRenombradas++;
-                                tablaModificada = true;
-                            }
-                        }
-                        // ==========================================================
-
                         if (tablaModificada)
                         {
                             tablasCorregidas++;
@@ -104,13 +137,15 @@ namespace TL60_RevisionDeTablas.Services
 
                     trans.Commit();
                     result.Exitoso = true;
-                    result.Mensaje = $"Corrección completa.\n" +
-                                     $"Tablas auditadas modificadas: {tablasCorregidas - tablasRenombradas}\n" +
-                                     $"Tablas de soporte reclasificadas: {tablasRenombradas}\n\n" +
+                    // (MODIFICADO) Mensaje de éxito actualizado
+                    result.Mensaje = $"Corrección completa.\n\n" +
+                                     $"Tablas únicas modificadas: {tablasCorregidas}\n\n" + // <-- LÍNEA AÑADIDA
                                      $"Detalles:\n" +
-                                     $"Filtros corregidos: {filtrosCorregidos}\n" +
-                                     $"Contenidos corregidos: {contenidosCorregidos}\n" +
-                                     $"Encabezados corregidos: {columnasCorregidas}";
+                                     $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
+                                     $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
+                                     $"- Filtros corregidos: {filtrosCorregidos}\n" +
+                                     $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
+                                     $"- 'Include Links' activados: {linksIncluidos}";
                 }
                 catch (Exception ex)
                 {
@@ -124,14 +159,17 @@ namespace TL60_RevisionDeTablas.Services
         }
 
         /// <summary>
-        /// (NUEVO) Renombra la tabla y actualiza sus parámetros de clasificación
+        /// (MODIFICADO) Renombra la tabla (si es necesario) y actualiza sus parámetros de clasificación
         /// </summary>
         private bool RenameAndReclassify(ViewSchedule view, RenamingJobData jobData, List<string> errores)
         {
             try
             {
-                // 1. Renombrar la vista
-                view.Name = jobData.NuevoNombre;
+                // 1. Renombrar la vista (Solo si el nombre nuevo es diferente)
+                if (view.Name != jobData.NuevoNombre)
+                {
+                    view.Name = jobData.NuevoNombre;
+                }
 
                 // 2. Establecer GRUPO DE VISTA
                 Parameter paramGrupo = view.LookupParameter("GRUPO DE VISTA");
@@ -190,8 +228,6 @@ namespace TL60_RevisionDeTablas.Services
                     ScheduleField field = FindField(definition, filtroInfo.FieldName);
                     if (field == null)
                     {
-                        // Si el campo no existe (ej. falta "EMPRESA"), no podemos añadir el filtro.
-                        // El procesador ya lo marcó como Error/Corregir, así que aquí solo lo ignoramos.
                         continue;
                     }
 

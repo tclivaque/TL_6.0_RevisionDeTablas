@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Text.RegularExpressions; // (NUEVO)
 using TL60_RevisionDeTablas.Models;
 
 namespace TL60_RevisionDeTablas.Services
@@ -13,116 +13,164 @@ namespace TL60_RevisionDeTablas.Services
         private readonly Document _doc;
         private readonly GoogleSheetsService _sheetsService;
 
+        // (NUEVO) Regex para extraer Assembly Code
+        private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2}\.)+\d{2}");
+
+        // (NUEVO) Lista de nombres WIP (de proyecto 5.0)
+        private static readonly List<string> NOMBRES_WIP = new List<string>
+        {
+            "TL", "TITO", "PDONTADENEA", "ANDREA", "EFRAIN",
+            "PROYECTOSBIM", "ASISTENTEBIM", "LUIS", "DIEGO", "JORGE", "MIGUEL"
+        };
+
         private readonly Dictionary<string, string> _aliasEncabezados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "DIGO", "CODIGO" },
-            { "DESCRIP", "DESCRIPCION" },
-            { "ACTIV", "ACTIVO" },
-            { "DULO", "MODULO" },
-            { "NIVE", "NIVEL" },
-            { "AMBIEN", "AMBIENTE" },
-            { "EJE", "EJES" },
-            { "PARC", "PARCIAL" },
-            { "UNID", "UNIDAD" },
-            { "ID", "ID" }
+            { "DIGO", "CODIGO" }, { "DESCRIP", "DESCRIPCION" }, { "ACTIV", "ACTIVO" },
+            { "DULO", "MODULO" }, { "NIVE", "NIVEL" }, { "AMBIEN", "AMBIENTE" },
+            { "EJE", "EJES" }, { "PARC", "PARCIAL" }, { "UNID", "UNIDAD" }, { "ID", "ID" }
         };
 
         private readonly List<string> _expectedHeadings = new List<string>
         {
-            "CODIGO",
-            "DESCRIPCION",
-            "ACTIVO",
-            "MODULO",
-            "NIVEL",
-            "AMBIENTE",
-            "PARCIAL",
-            "UNIDAD",
-            "ID"
+            "CODIGO", "DESCRIPCION", "ACTIVO", "MODULO", "NIVEL",
+            "AMBIENTE", "PARCIAL", "UNIDAD", "ID"
         };
         private const int _expectedHeadingCount = 9;
 
 
-        public ScheduleProcessor(Document doc, GoogleSheetsService sheetsService)
+        public ScheduleProcessor(Document doc, GoogleSheetsService sheetsService, ManualScheduleService manualScheduleService)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
             _sheetsService = sheetsService ?? throw new ArgumentNullException(nameof(sheetsService));
+            // (MODIFICADO) El servicio G-Sheets se mantiene, el ManualScheduleService ya no es necesario aquí.
         }
 
         // =================================================================
         // ===== MÉTODO #1: Auditoría de "Tablas de Metrados" =====
         // =================================================================
 
-        /// <summary>
-        /// Ejecuta la auditoría completa (Filtros, Columnas, Contenido)
-        /// </summary>
-        public ElementData ProcessSingleElement(ViewSchedule view)
+        public ElementData ProcessSingleElement(ViewSchedule view, string assemblyCode)
         {
             var elementData = new ElementData
             {
                 ElementId = view.Id,
                 Element = view,
                 Nombre = view.Name,
-                Categoria = view.Category?.Name ?? "Tabla de Planificación"
+                Categoria = view.Category?.Name ?? "Tabla de Planificación",
+                CodigoIdentificacion = assemblyCode
             };
 
             ScheduleDefinition definition = view.Definition;
 
-            string[] parts = view.Name.Split(new[] { " - " }, StringSplitOptions.None);
-            elementData.CodigoIdentificacion = parts.Length > 0 ?
-                parts[0].Trim() : view.Name;
-
             // --- Ejecutar Auditorías ---
+            var auditViewName = ProcessViewName(view, assemblyCode);
             var auditFilter = ProcessFilters(definition, elementData.CodigoIdentificacion);
             var auditColumns = ProcessColumns(definition);
-            var auditContent = ProcessContent(view, definition);
+            var auditContent = ProcessContent(definition);
+            var auditLinks = ProcessIncludeLinks(definition);
 
+            elementData.AuditResults.Add(auditViewName);
             elementData.AuditResults.Add(auditFilter);
             elementData.AuditResults.Add(auditColumns);
             elementData.AuditResults.Add(auditContent);
+            elementData.AuditResults.Add(auditLinks);
 
-            // --- Almacenar datos para corrección (si los hay) ---
-            if (auditFilter.Estado == EstadoParametro.Corregir)
+            // Si el A.C. es inválido, añadir un error fatal
+            if (assemblyCode == "INVALID_AC")
             {
-                // Solo 'EMPRESA' es corregible
-                auditFilter.Tag = auditFilter.Tag; // El tag ya contiene la lista
+                elementData.AuditResults.Add(new AuditItem
+                {
+                    AuditType = "VIEW NAME",
+                    Estado = EstadoParametro.Error,
+                    Mensaje = "Error: El nombre no contiene un Assembly Code (ej. C.xx.xx) válido.",
+                    IsCorrectable = false
+                });
             }
 
-            if (auditColumns.Estado == EstadoParametro.Corregir)
-            {
-
-            }
-
-            if (auditContent.Estado == EstadoParametro.Corregir)
-            {
-                auditContent.Tag = true; // Marcar para corrección
-            }
+            // --- Almacenar datos para corrección (Tag) ---
+            if (auditViewName.Estado == EstadoParametro.Corregir) auditViewName.Tag = auditViewName.ValorCorregido;
+            if (auditFilter.Estado == EstadoParametro.Corregir) auditFilter.Tag = auditFilter.Tag;
+            if (auditContent.Estado == EstadoParametro.Corregir) auditContent.Tag = true;
+            if (auditLinks.Estado == EstadoParametro.Corregir) auditLinks.Tag = true;
+            // No se añade Tag para Columnas (Advertencia)
 
             elementData.DatosCompletos = elementData.AuditResults.All(r => r.Estado == EstadoParametro.Correcto);
 
             return elementData;
         }
 
-
-        #region Auditoría 1: FILTRO (NUEVA LÓGICA DE ERROR)
-
-        // =====================================================================
-        // FRAGMENTO CORREGIDO: ProcessFilters() en ScheduleProcessor.cs
-        // =====================================================================
-
-        private AuditItem ProcessFilters(ScheduleDefinition definition, string assemblyCode)
+        // =================================================================
+        // ===== (NUEVO) Auditoría 0: VIEW NAME (Simplificada) =====
+        // =================================================================
+        private AuditItem ProcessViewName(ViewSchedule view, string assemblyCode)
         {
             var item = new AuditItem
             {
-                AuditType = "FILTRO",
-                IsCorrectable = true
+                AuditType = "VIEW NAME",
+                ValorActual = view.Name
             };
 
+            // Caso 1: A.C. no válido (Error)
+            if (assemblyCode == "INVALID_AC")
+            {
+                item.Estado = EstadoParametro.Error;
+                item.Mensaje = "Error: El nombre no contiene un Assembly Code (ej. C.xx.xx) válido.";
+                item.ValorCorregido = "N/A";
+                item.IsCorrectable = false;
+                return item;
+            }
+
+            string viewName = view.Name;
+            bool sufijoCorrecto = viewName.EndsWith(" - RNG", StringComparison.Ordinal);
+            string separadorEsperado = " - ";
+            bool separadorCorrecto = viewName.Substring(assemblyCode.Length).StartsWith(separadorEsperado);
+
+            if (sufijoCorrecto && separadorCorrecto)
+            {
+                // Caso 2: Coincide (Correcto)
+                item.Estado = EstadoParametro.Correcto;
+                item.Mensaje = "Correcto: El formato del nombre de la tabla es válido.";
+                item.ValorCorregido = viewName;
+                item.IsCorrectable = false;
+            }
+            else
+            {
+                // Caso 3: No coincide (Corregir)
+                item.Estado = EstadoParametro.Corregir;
+                item.Mensaje = "Corregir: El formato del nombre (separador o sufijo) es incorrecto.";
+                item.IsCorrectable = true;
+
+                // Construir el nombre corregido
+                // 1. Quitar el sufijo incorrecto (si existe)
+                string desc = viewName.Substring(assemblyCode.Length);
+                if (desc.EndsWith(" - RNG", StringComparison.OrdinalIgnoreCase))
+                {
+                    desc = desc.Substring(0, desc.Length - " - RNG".Length);
+                }
+                else if (desc.EndsWith("-RNG", StringComparison.OrdinalIgnoreCase))
+                {
+                    desc = desc.Substring(0, desc.Length - "-RNG".Length);
+                }
+
+                // 2. Limpiar el inicio (quitar guiones o espacios)
+                desc = desc.TrimStart(' ', '-');
+
+                // 3. Ensamblar
+                item.ValorCorregido = $"{assemblyCode} - {desc} - RNG";
+            }
+
+            return item;
+        }
+
+
+        #region Auditoría 1: FILTRO (Lógica de ESTADOS modificada)
+
+        private AuditItem ProcessFilters(ScheduleDefinition definition, string assemblyCode)
+        {
+            var item = new AuditItem { AuditType = "FILTRO", IsCorrectable = false, Estado = EstadoParametro.Correcto }; // Inicia como Correcto
             var filtrosActuales = definition.GetFilters().ToList();
             var filtrosCorrectosInfo = new List<ScheduleFilterInfo>();
 
-            // ========================================
-            // PASO 1: Buscar el filtro PRINCIPAL
-            // ========================================
             ScheduleFilter filtroPrincipal = null;
             int indexFiltroPrincipal = -1;
             int contadorFiltrosPrincipales = 0;
@@ -131,25 +179,18 @@ namespace TL60_RevisionDeTablas.Services
             {
                 var filter = filtrosActuales[i];
                 string fieldName = definition.GetField(filter.FieldId).GetName();
-
-                // ¿Es un campo de Assembly Code?
                 if (IsAssemblyCodeField(fieldName))
                 {
-                    // ¿Su valor empieza con "C."?
                     string valorFiltro = GetFilterValueString(filter);
                     if (valorFiltro.StartsWith("C.", StringComparison.OrdinalIgnoreCase))
                     {
                         contadorFiltrosPrincipales++;
-                        if (filtroPrincipal == null)
-                        {
-                            filtroPrincipal = filter;
-                            indexFiltroPrincipal = i;
-                        }
+                        if (filtroPrincipal == null) { filtroPrincipal = filter; indexFiltroPrincipal = i; }
                     }
                 }
             }
 
-            // ¿Hay más de un filtro principal? → ERROR
+            // (MODIFICADO) ERROR (Fatal)
             if (contadorFiltrosPrincipales > 1)
             {
                 item.Estado = EstadoParametro.Error;
@@ -159,7 +200,7 @@ namespace TL60_RevisionDeTablas.Services
                 return item;
             }
 
-            // ¿No hay filtro principal? → ERROR
+            // (MODIFICADO) ERROR (Fatal)
             if (filtroPrincipal == null)
             {
                 item.Estado = EstadoParametro.Error;
@@ -169,61 +210,54 @@ namespace TL60_RevisionDeTablas.Services
                 return item;
             }
 
-            // Verificar si el valor del filtro principal coincide con assemblyCode
+            // (MODIFICADO) A.C. vs Nombre -> ADVERTENCIA
             string valorPrincipal = GetFilterValueString(filtroPrincipal);
             bool assemblyCodeCorrecto = valorPrincipal.Equals(assemblyCode, StringComparison.OrdinalIgnoreCase);
-
             if (!assemblyCodeCorrecto)
             {
-                item.Estado = EstadoParametro.Error;
-                item.Mensaje = $"Error: El valor del filtro AC ('{valorPrincipal}') no coincide con el del nombre ('{assemblyCode}').";
+                item.Estado = EstadoParametro.Vacio; // Advertencia
+                item.Mensaje = $"Advertencia: El valor del filtro AC ('{valorPrincipal}') no coincide con el del nombre ('{assemblyCode}').";
             }
 
-            // Agregar filtro principal a la lista de correctos
             filtrosCorrectosInfo.Add(new ScheduleFilterInfo
             {
                 FieldName = definition.GetField(filtroPrincipal.FieldId).GetName(),
                 FilterType = filtroPrincipal.FilterType,
-                Value = assemblyCode // Valor correcto
+                Value = assemblyCode
             });
 
-            // ========================================
-            // PASO 2: Buscar el filtro EMPRESA
-            // ========================================
             ScheduleFilter filtroEmpresa = null;
             int indexFiltroEmpresa = -1;
-
             for (int i = 0; i < filtrosActuales.Count; i++)
             {
-                var filter = filtrosActuales[i];
-                string fieldName = definition.GetField(filter.FieldId).GetName();
-
+                string fieldName = definition.GetField(filtrosActuales[i].FieldId).GetName();
                 if (fieldName.Equals("EMPRESA", StringComparison.OrdinalIgnoreCase))
                 {
-                    filtroEmpresa = filter;
-                    indexFiltroEmpresa = i;
-                    break;
+                    filtroEmpresa = filtrosActuales[i]; indexFiltroEmpresa = i; break;
                 }
             }
 
-            // Verificar EMPRESA
+            // (MODIFICADO) EMPRESA -> CORREGIR
             bool empresaCorrecta = false;
             if (filtroEmpresa != null)
             {
                 string valorEmpresa = GetFilterValueString(filtroEmpresa);
                 empresaCorrecta = valorEmpresa.Equals("RNG", StringComparison.OrdinalIgnoreCase);
 
-                if (!empresaCorrecta)
+                if (!empresaCorrecta && item.Estado == EstadoParametro.Correcto) // Solo si no hay error/advertencia previa
                 {
-                    if (item.Estado != EstadoParametro.Error)
-                        item.Estado = EstadoParametro.Corregir;
-
-                    item.Mensaje = (item.Mensaje ?? "") +
-                        $"\nError: Filtro EMPRESA ('{valorEmpresa}') no es 'RNG'.";
+                    item.Estado = EstadoParametro.Corregir;
+                    item.Mensaje = "Corregir: Filtro EMPRESA no es 'RNG'.";
+                    item.IsCorrectable = true;
                 }
             }
+            else if (item.Estado == EstadoParametro.Correcto) // No existe y no hay error/advertencia previa
+            {
+                item.Estado = EstadoParametro.Corregir;
+                item.Mensaje = "Corregir: Falta el filtro EMPRESA = 'RNG'.";
+                item.IsCorrectable = true;
+            }
 
-            // Agregar filtro EMPRESA a la lista
             filtrosCorrectosInfo.Add(new ScheduleFilterInfo
             {
                 FieldName = "EMPRESA",
@@ -231,15 +265,9 @@ namespace TL60_RevisionDeTablas.Services
                 Value = "RNG"
             });
 
-            // ========================================
-            // PASO 3: Agregar RESTO de filtros
-            // ========================================
             for (int i = 0; i < filtrosActuales.Count; i++)
             {
-                // Saltar el principal y EMPRESA (ya los agregamos)
-                if (i == indexFiltroPrincipal || i == indexFiltroEmpresa)
-                    continue;
-
+                if (i == indexFiltroPrincipal || i == indexFiltroEmpresa) continue;
                 var filter = filtrosActuales[i];
                 filtrosCorrectosInfo.Add(new ScheduleFilterInfo
                 {
@@ -249,216 +277,175 @@ namespace TL60_RevisionDeTablas.Services
                 });
             }
 
-            // ========================================
-            // PASO 4: Comparar orden y valores
-            // ========================================
             bool ordenCorrecto = true;
-
-            // Comparar cada filtro actual con su posición esperada
-            for (int i = 0; i < filtrosActuales.Count; i++)
+            if (filtrosActuales.Count != filtrosCorrectosInfo.Count)
             {
-                var actualInfo = GetFilterInfo(filtrosActuales[i], definition);
-                var correctoInfo = filtrosCorrectosInfo[i];
-
-                if (actualInfo.FieldName != correctoInfo.FieldName ||
-                    actualInfo.FilterType != correctoInfo.FilterType ||
-                    !AreFilterValuesEqual(actualInfo.Value, correctoInfo.Value))
+                ordenCorrecto = false;
+            }
+            else
+            {
+                for (int i = 0; i < filtrosActuales.Count; i++)
                 {
-                    ordenCorrecto = false;
-                    if (item.Estado != EstadoParametro.Error)
-                        item.Estado = EstadoParametro.Corregir;
-                    break;
+                    var actualInfo = GetFilterInfo(filtrosActuales[i], definition);
+                    var correctoInfo = filtrosCorrectosInfo[i];
+                    if (actualInfo.FieldName != correctoInfo.FieldName ||
+                        actualInfo.FilterType != correctoInfo.FilterType ||
+                        !AreFilterValuesEqual(actualInfo.Value, correctoInfo.Value))
+                    {
+                        ordenCorrecto = false; break;
+                    }
                 }
             }
 
-            // ========================================
-            // PASO 5: Finalizar
-            // ========================================
             item.ValorActual = GetFiltersAsString(definition, filtrosActuales);
             item.ValorCorregido = string.Join("\n", filtrosCorrectosInfo.Select(f => f.AsString()));
 
-            // Si no hay errores Y el orden es correcto, es correcto
-            if (item.Estado != EstadoParametro.Error &&
-                item.Estado != EstadoParametro.Corregir &&
-                assemblyCodeCorrecto && empresaCorrecta && ordenCorrecto)
-            {
-                item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Filtros correctos.";
-            }
-            else if (!ordenCorrecto && item.Estado != EstadoParametro.Error)
+            if (!ordenCorrecto && item.Estado == EstadoParametro.Correcto) // No hay error/advertencia previa
             {
                 item.Estado = EstadoParametro.Corregir;
-                item.Mensaje = "Los filtros no están en el orden correcto o tienen valores diferentes.";
+                item.Mensaje = "Corregir: Los filtros no están en el orden correcto o tienen valores diferentes.";
+                item.IsCorrectable = true;
             }
 
-            // Guardar lista para corrección (si es corregible)
-            if (item.Estado == EstadoParametro.Corregir)
+            if (item.Estado == EstadoParametro.Correcto)
             {
-                item.Tag = filtrosCorrectosInfo;
+                item.Mensaje = "Correcto: Filtros correctos.";
             }
+
+            if (item.IsCorrectable) item.Tag = filtrosCorrectosInfo;
 
             return item;
         }
 
-        // (Lógica de búsqueda de índices sin cambios)
-        private int FindMAINAssemblyCodeFilterIndex(List<ScheduleFilter> filters, ScheduleDefinition def)
-        {
-            for (int i = 0; i < filters.Count; i++)
-            {
-                var filter = filters[i];
-                var fieldName = def.GetField(filter.FieldId)?.GetName();
-                if (IsAssemblyCodeField(fieldName))
-                {
-                    return i; // Devuelve el PRIMERO que encuentra
-                }
-            }
-            return -1;
-        }
-
-        private int FindEmpresaFilterIndex(List<ScheduleFilter> filters, ScheduleDefinition def)
-        {
-            for (int i = 0; i < filters.Count; i++)
-            {
-                var fieldName = def.GetField(filters[i].FieldId)?.GetName();
-                if (IsEmpresaField(fieldName))
-                {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        // (Lógica de comprobación de nombres sin cambios)
+        // ... (Funciones auxiliares de Filtro: IsAssemblyCodeField, GetFilterInfo, etc. van aquí) ...
         private bool IsAssemblyCodeField(string fieldName)
         {
             if (string.IsNullOrEmpty(fieldName)) return false;
             string fn = fieldName.Trim();
-
             return fn.Equals("Assembly Code", StringComparison.OrdinalIgnoreCase) ||
                    fn.EndsWith(": Assembly Code", StringComparison.OrdinalIgnoreCase) ||
                    fn.Equals("MATERIAL_ASSEMBLY CODE", StringComparison.OrdinalIgnoreCase) ||
                    fn.EndsWith(": MATERIAL_ASSEMBLY CODE", StringComparison.OrdinalIgnoreCase);
         }
-
-        private bool IsEmpresaField(string fieldName)
+        private ScheduleFilterInfo GetFilterInfo(ScheduleFilter filter, ScheduleDefinition def)
         {
-            if (string.IsNullOrEmpty(fieldName)) return false;
-            string fn = fieldName.Trim();
-
-            return fn.Equals("EMPRESA", StringComparison.OrdinalIgnoreCase) ||
-                   fn.EndsWith(": EMPRESA", StringComparison.OrdinalIgnoreCase);
+            var field = def.GetField(filter.FieldId);
+            return new ScheduleFilterInfo { FieldName = field.GetName(), FilterType = filter.FilterType, Value = GetFilterValueObject(filter) };
+        }
+        private string GetFiltersAsString(ScheduleDefinition definition, IList<ScheduleFilter> filters)
+        {
+            if (filters == null || filters.Count == 0) return "(Sin Filtros)";
+            var filterStrings = new List<string>();
+            foreach (var filter in filters)
+            {
+                if (filter == null) continue;
+                ScheduleField field = definition.GetField(filter.FieldId);
+                if (field == null) continue;
+                string fieldName = field.GetName();
+                string condition = filter.FilterType.ToString();
+                string value = GetFilterValueString(filter);
+                filterStrings.Add($"{fieldName} {condition} {value}");
+            }
+            return string.Join("\n", filterStrings);
+        }
+        private string GetFilterValueString(ScheduleFilter filter)
+        {
+            if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue) return string.Empty;
+            if (filter.IsStringValue) return filter.GetStringValue();
+            if (filter.IsDoubleValue) return filter.GetDoubleValue().ToString();
+            if (filter.IsElementIdValue) return filter.GetElementIdValue().IntegerValue.ToString();
+            return "(valor no legible)";
+        }
+        private object GetFilterValueObject(ScheduleFilter filter)
+        {
+            if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue) return null;
+            if (filter.IsStringValue) return filter.GetStringValue();
+            if (filter.IsDoubleValue) return filter.GetDoubleValue();
+            if (filter.IsElementIdValue) return filter.GetElementIdValue();
+            return null;
+        }
+        private bool AreFilterValuesEqual(object value1, object value2)
+        {
+            if (value1 == null && value2 == null) return true;
+            if (value1 == null || value2 == null) return false;
+            if (value1 is string s1 && value2 is string s2) return s1.Equals(s2, StringComparison.OrdinalIgnoreCase);
+            if (value1 is ElementId id1 && value2 is ElementId id2) return id1.IntegerValue == id2.IntegerValue;
+            return value1.Equals(value2);
         }
 
         #endregion
 
-        #region Auditoría 2: COLUMNAS (Sin cambios)
+        #region Auditoría 2: COLUMNAS (MODIFICADO a Advertencia)
 
         private AuditItem ProcessColumns(ScheduleDefinition definition)
         {
             var item = new AuditItem
             {
                 AuditType = "COLUMNAS",
-                IsCorrectable = true
+                IsCorrectable = false // No se puede corregir automáticamente
             };
 
             var actualHeadings = new List<string>();
-            var visibleFields = new List<ScheduleField>();
-
             for (int i = 0; i < definition.GetFieldCount(); i++)
             {
                 var field = definition.GetField(i);
                 if (!field.IsHidden)
                 {
                     actualHeadings.Add(field.ColumnHeading.ToUpper().Trim());
-                    visibleFields.Add(field);
                 }
             }
 
+            // (MODIFICADO) Conteo -> ADVERTENCIA
             if (actualHeadings.Count != _expectedHeadingCount)
             {
-                item.Estado = EstadoParametro.Error;
-                item.Mensaje = $"Error: Se esperaban {_expectedHeadingCount} columnas visibles, pero se encontraron {actualHeadings.Count}.";
+                item.Estado = EstadoParametro.Vacio; // Advertencia
+                item.Mensaje = $"Advertencia: Se esperaban {_expectedHeadingCount} columnas visibles, pero se encontraron {actualHeadings.Count}.";
                 item.ValorActual = $"Total: {actualHeadings.Count}\n" + string.Join("\n", actualHeadings);
                 item.ValorCorregido = $"Total: {_expectedHeadingCount}\n" + string.Join("\n", _expectedHeadings);
-                item.IsCorrectable = false;
                 return item;
             }
 
-            var correctedHeadings = new List<string>();
-            var headingsToFix = new Dictionary<ScheduleField, string>();
             bool isCorrect = true;
-
+            // (Lógica de revisión de encabezados omitida por brevedad, es la misma que ya tenías)
             for (int i = 0; i < _expectedHeadingCount; i++)
             {
                 string actual = actualHeadings[i];
                 string expectedBase = _expectedHeadings[i];
                 string corrected = actual;
-
-                if (i == 5) // Posición 6 (AMBIENTE o EJE)
-                {
-                    string expectedAlt = "EJES";
-                    if (actual == expectedBase || actual == expectedAlt)
-                    {
-                        corrected = actual;
-                    }
-                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue))
-                    {
-                        corrected = aliasValue;
-                    }
-                    else
-                    {
-                        isCorrect = false;
-                        corrected = expectedBase;
-                    }
-                }
-                else // Lógica normal
-                {
-                    if (actual == expectedBase)
-                    {
-                        corrected = actual;
-                    }
-                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue))
-                    {
-                        corrected = aliasValue;
-                    }
-                }
-
                 if (i == 5)
                 {
-                    if (corrected != "AMBIENTE" && corrected != "EJES")
-                    {
-                        isCorrect = false;
-                        corrected = "AMBIENTE";
-                    }
+                    if (actual == expectedBase || actual == "EJES") { }
+                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue)) corrected = aliasValue;
+                    else isCorrect = false;
+                }
+                else
+                {
+                    if (actual == expectedBase) { }
+                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue)) corrected = aliasValue;
+                }
+                if (i == 5)
+                {
+                    if (corrected != "AMBIENTE" && corrected != "EJES") isCorrect = false;
                 }
                 else if (corrected != expectedBase)
                 {
                     isCorrect = false;
-                    corrected = expectedBase;
-                }
-
-                correctedHeadings.Add(corrected);
-
-                if (actual != corrected)
-                {
-                    isCorrect = false;
-                    headingsToFix[visibleFields[i]] = corrected;
                 }
             }
 
             item.ValorActual = string.Join("\n", actualHeadings);
-            item.ValorCorregido = string.Join("\n", correctedHeadings);
+            item.ValorCorregido = string.Join("\n", _expectedHeadings);
 
-            if (isCorrect)
+            // (MODIFICADO) Encabezados -> ADVERTENCIA
+            if (!isCorrect)
             {
-                item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Encabezados correctos.";
+                item.Estado = EstadoParametro.Vacio; // Advertencia
+                item.Mensaje = "Advertencia: Los encabezados no coinciden con el estándar (ALIAS).";
             }
             else
             {
-                item.Estado = EstadoParametro.Corregir;
-                item.Mensaje = $"Error: {headingsToFix.Count} encabezados necesitan corrección.";
-                item.Tag = headingsToFix;
+                item.Estado = EstadoParametro.Correcto;
+                item.Mensaje = "Correcto: Encabezados correctos.";
             }
 
             return item;
@@ -466,48 +453,106 @@ namespace TL60_RevisionDeTablas.Services
 
         #endregion
 
-        #region Auditoría 3: CONTENIDO (Sin cambios)
+        #region Auditoría 3: CONTENIDO (Itemize - Prefijo de Mensaje)
 
-        private AuditItem ProcessContent(ViewSchedule view, ScheduleDefinition definition)
+        private AuditItem ProcessContent(ScheduleDefinition definition)
         {
             var item = new AuditItem
             {
                 AuditType = "CONTENIDO",
-                IsCorrectable = true
+                IsCorrectable = true,
+                ValorCorregido = "Detallar cada ejemplar: Sí"
             };
 
             bool isItemized = definition.IsItemized;
-
-            string actualItemizedStr = isItemized ? "Sí" : "No";
-
-            item.ValorActual = $"Detallar cada ejemplar: {actualItemizedStr}";
-            item.ValorCorregido = $"Detallar cada ejemplar: Sí";
+            item.ValorActual = $"Detallar cada ejemplar: {(isItemized ? "Sí" : "No")}";
 
             if (isItemized)
             {
                 item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Correcto.";
+                item.Mensaje = "Correcto: 'Detallar cada ejemplar' está activado.";
+                item.IsCorrectable = false;
             }
             else
             {
                 item.Estado = EstadoParametro.Corregir;
-                item.Mensaje = "Error: 'Detallar cada ejemplar' está desactivado.";
+                item.Mensaje = "Corregir: 'Detallar cada ejemplar' está desactivado.";
+                item.Tag = true;
+            }
+            return item;
+        }
+
+        #endregion
+
+        #region (NUEVO) Auditoría 4: INCLUDE LINKS
+
+        private AuditItem ProcessIncludeLinks(ScheduleDefinition definition)
+        {
+            var item = new AuditItem
+            {
+                AuditType = "LINKS",
+                IsCorrectable = true,
+                ValorCorregido = "Incluir elementos de links: Sí"
+            };
+
+            bool includeLinks = definition.IncludeLinkedFiles;
+            item.ValorActual = $"Incluir elementos de links: {(includeLinks ? "Sí" : "No")}";
+
+            if (includeLinks)
+            {
+                item.Estado = EstadoParametro.Correcto;
+                item.Mensaje = "Correcto: 'Include elements in links' está activado.";
+                item.IsCorrectable = false;
+            }
+            else
+            {
+                item.Estado = EstadoParametro.Corregir;
+                item.Mensaje = "Corregir: 'Include elements in links' está desactivado.";
                 item.Tag = true; // Marcar para corrección
             }
-
             return item;
         }
 
         #endregion
 
         // =================================================================
-        // ===== MÉTODO #2: Corrección de "Tablas de Soporte" =====
+        // ===== MÉTODOS DE CREACIÓN DE TRABAJOS (Jobs) =====
         // =================================================================
 
-        /// <summary>
-        /// (NUEVO) Crea un trabajo de corrección para tablas que no son de metrados
-        /// </summary>
         public ElementData CreateRenamingJob(ViewSchedule view)
+        {
+            string nombreActual = view.Name;
+            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
+            string nombreCorregido = nombreActual.Replace("C.", "SOPORTE.");
+            var jobData = new RenamingJobData { NuevoNombre = nombreCorregido, NuevoGrupoVista = "00 TRABAJO EN PROCESO - WIP", NuevoSubGrupoVista = "SOPORTE DE METRADOS" };
+            return CreateJobElementData(view, "CLASIFICACIÓN (SOPORTE)", "Corregir: Tabla de soporte mal clasificada.", $"Grupo: {grupoActual}", $"Grupo: {jobData.NuevoGrupoVista}", jobData);
+        }
+
+        public ElementData CreateManualRenamingJob(ViewSchedule view)
+        {
+            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
+            var jobData = new RenamingJobData { NuevoNombre = view.Name, NuevoGrupoVista = "REVISAR", NuevoSubGrupoVista = "METRADO MANUAL" };
+            return CreateJobElementData(view, "CLASIFICACIÓN (MANUAL)", "Corregir: Tabla de Metrado Manual. Se reclasificará.", $"Grupo: {grupoActual}", $"Grupo: {jobData.NuevoGrupoVista}", jobData);
+        }
+
+        // (NUEVO)
+        public ElementData CreateCopyReclassifyJob(ViewSchedule view)
+        {
+            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
+            var jobData = new RenamingJobData { NuevoNombre = view.Name, NuevoGrupoVista = "REVISAR", NuevoSubGrupoVista = string.Empty };
+            return CreateJobElementData(view, "CLASIFICACIÓN (COPIA)", "Corregir: La tabla parece ser una copia y será reclasificada.", $"Grupo: {grupoActual}", $"Grupo: {jobData.NuevoGrupoVista}", jobData);
+        }
+
+        // (NUEVO)
+        public ElementData CreateWipReclassifyJob(ViewSchedule view)
+        {
+            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
+            var jobData = new RenamingJobData { NuevoNombre = view.Name, NuevoGrupoVista = "00 TRABAJO EN PROCESO - WIP", NuevoSubGrupoVista = "SOPORTE BIM" };
+            return CreateJobElementData(view, "CLASIFICACIÓN (WIP)", "Corregir: Tabla de trabajo interno. Será reclasificada.", $"Grupo: {grupoActual}", $"Grupo: {jobData.NuevoGrupoVista}", jobData);
+        }
+
+        // (NUEVO) Helper para crear trabajos
+        private ElementData CreateJobElementData(ViewSchedule view, string auditType, string mensaje, string valorActual, string valorCorregido, RenamingJobData jobData)
         {
             var elementData = new ElementData
             {
@@ -516,172 +561,21 @@ namespace TL60_RevisionDeTablas.Services
                 Nombre = view.Name,
                 Categoria = view.Category?.Name ?? "Tabla de Planificación",
                 CodigoIdentificacion = "N/A",
-                DatosCompletos = false // Siempre requiere corrección
-            };
-
-            string nombreActual = view.Name;
-            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
-
-            string nombreCorregido = nombreActual.Replace("C.", "SOPORTE.");
-            string grupoCorregido = "00 TRABAJO EN PROCESO - WIP";
-            string subGrupoCorregido = "SOPORTE DE METRADOS";
-
-            var jobData = new RenamingJobData
-            {
-                NuevoNombre = nombreCorregido,
-                NuevoGrupoVista = grupoCorregido,
-                NuevoSubGrupoVista = subGrupoCorregido
+                DatosCompletos = false
             };
 
             var auditItem = new AuditItem
             {
-                AuditType = "CLASIFICACIÓN", // Nuevo tipo de auditoría
+                AuditType = auditType,
                 IsCorrectable = true,
                 Estado = EstadoParametro.Corregir,
-                Mensaje = "Tabla de soporte mal clasificada.",
-                ValorActual = $"Nombre: {nombreActual}\nGrupo: {grupoActual}",
-                ValorCorregido = $"Nombre: {nombreCorregido}\nGrupo: {grupoCorregido}\nSubGrupo: {subGrupoCorregido}",
-                Tag = jobData // Adjuntar los datos del trabajo
+                Mensaje = mensaje,
+                ValorActual = valorActual,
+                ValorCorregido = valorCorregido,
+                Tag = jobData
             };
-
             elementData.AuditResults.Add(auditItem);
             return elementData;
         }
-
-        // =================================================================
-        // ===== (NUEVO) MÉTODO #3: Corrección de "Tablas de Metrado Manual" =====
-        // =================================================================
-
-        /// <summary>
-        /// (NUEVO) Crea un trabajo de corrección para tablas de "METRADO MANUAL"
-        /// </summary>
-        public ElementData CreateManualRenamingJob(ViewSchedule view)
-        {
-            var elementData = new ElementData
-            {
-                ElementId = view.Id,
-                Element = view,
-                Nombre = view.Name,
-                Categoria = view.Category?.Name ?? "Tabla de Planificación",
-                CodigoIdentificacion = view.Name.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim(),
-                DatosCompletos = false // Siempre requiere corrección
-            };
-
-            string nombreActual = view.Name;
-            string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
-
-            // Los nuevos valores que solicitaste
-            string nombreCorregido = nombreActual; // El nombre no cambia
-            string grupoCorregido = "REVISAR";
-            string subGrupoCorregido = "METRADO MANUAL";
-
-            var jobData = new RenamingJobData
-            {
-                NuevoNombre = nombreCorregido,
-                NuevoGrupoVista = grupoCorregido,
-                NuevoSubGrupoVista = subGrupoCorregido
-            };
-
-            var auditItem = new AuditItem
-            {
-                AuditType = "CLASIFICACIÓN (MANUAL)", // Nuevo tipo de auditoría
-                IsCorrectable = true,
-                Estado = EstadoParametro.Corregir,
-                Mensaje = "Tabla de Metrado Manual. Se reclasificará.",
-                ValorActual = $"Grupo: {grupoActual}",
-                ValorCorregido = $"Grupo: {grupoCorregido}\nSubGrupo: {subGrupoCorregido}",
-                Tag = jobData // Adjuntar los datos del trabajo
-            };
-
-            elementData.AuditResults.Add(auditItem);
-            return elementData;
-        }
-
-        #region Helpers de Filtros
-
-        private ScheduleFilterInfo GetFilterInfo(ScheduleFilter filter, ScheduleDefinition def)
-        {
-            var field = def.GetField(filter.FieldId);
-            return new ScheduleFilterInfo
-            {
-                FieldName = field.GetName(),
-                FilterType = filter.FilterType,
-                Value = GetFilterValueObject(filter)
-            };
-        }
-
-        private string GetFiltersAsString(ScheduleDefinition definition, IList<ScheduleFilter> filters)
-        {
-            if (filters == null || filters.Count == 0)
-                return "(Sin Filtros)";
-
-            var filterStrings = new List<string>();
-            foreach (var filter in filters)
-            {
-                if (filter == null) continue;
-                ScheduleField field = definition.GetField(filter.FieldId);
-                if (field == null) continue;
-
-                string fieldName = field.GetName();
-                string condition = filter.FilterType.ToString();
-                string value = GetFilterValueString(filter);
-                filterStrings.Add($"{fieldName} {condition} {value}");
-            }
-            return string.Join("\n", filterStrings);
-        }
-
-        private string GetFilterValueString(ScheduleFilter filter)
-        {
-            if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue)
-                return string.Empty;
-
-            if (filter.IsStringValue)
-                return filter.GetStringValue();
-
-            if (filter.IsDoubleValue)
-                return filter.GetDoubleValue().ToString();
-
-            if (filter.IsElementIdValue)
-                return filter.GetElementIdValue().IntegerValue.ToString();
-
-            return "(valor no legible)";
-        }
-
-        private object GetFilterValueObject(ScheduleFilter filter)
-        {
-            if (filter.FilterType == ScheduleFilterType.HasValue || filter.FilterType == ScheduleFilterType.HasNoValue)
-                return null;
-
-            if (filter.IsStringValue)
-                return filter.GetStringValue();
-
-            if (filter.IsDoubleValue)
-                return filter.GetDoubleValue();
-
-            if (filter.IsElementIdValue)
-                return filter.GetElementIdValue();
-
-            return null;
-        }
-
-        private bool AreFilterValuesEqual(object value1, object value2)
-        {
-            if (value1 == null && value2 == null) return true;
-            if (value1 == null || value2 == null) return false;
-
-            // Comparar strings (ignora mayúsculas)
-            if (value1 is string s1 && value2 is string s2)
-                return s1.Equals(s2, StringComparison.OrdinalIgnoreCase);
-
-            // Comparar ElementId
-            if (value1 is ElementId id1 && value2 is ElementId id2)
-                return id1.IntegerValue == id2.IntegerValue;
-
-            // Comparar otros tipos directamente
-            return value1.Equals(value2);
-        }
-
-
-        #endregion
     }
 }
