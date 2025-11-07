@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions; // (NUEVO)
+using System.Text.RegularExpressions;
 using TL60_RevisionDeTablas.Models;
 
 namespace TL60_RevisionDeTablas.Services
@@ -12,42 +12,96 @@ namespace TL60_RevisionDeTablas.Services
     {
         private readonly Document _doc;
         private readonly GoogleSheetsService _sheetsService;
+        private readonly string _docTitle;
+        private readonly string _spreadsheetId;
+        private readonly List<string> _ejesKeywords;
 
-        // (NUEVO) Regex para extraer Assembly Code
-        private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2}\.)+\d{2}");
+        // (MODIFICADO) Regex admite 2 o 3 dígitos
+        private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2,3}\.)+\d{2,3}");
 
-        // (NUEVO) Lista de nombres WIP (de proyecto 5.0)
         private static readonly List<string> NOMBRES_WIP = new List<string>
         {
             "TL", "TITO", "PDONTADENEA", "ANDREA", "EFRAIN",
             "PROYECTOSBIM", "ASISTENTEBIM", "LUIS", "DIEGO", "JORGE", "MIGUEL"
         };
 
+        private static readonly List<string> MODELOS_ARQUITECTURA = new List<string>
+        {
+            "200114-CCC02-MO-AR-045500", "200114-CCC02-MO-AR-045600",
+            "200114-CCC02-MO-AR-046900", "200114-CCC02-MO-AR-047000",
+            "200114-CCC02-MO-AR-047100", "200114-CCC02-MO-AR-047200",
+            "200114-CCC02-MO-AR-047300", "200114-CCC02-MO-AR-047400",
+            "200114-CCC02-MO-AR-047500", "200114-CCC02-MO-AR-047600",
+            "200114-CCC02-MO-AR-047700", "200114-CCC02-MO-AR-047800",
+            "200114-CCC02-MO-AR-047900", "200114-CCC02-MO-AR-048000",
+            "200114-CCC02-MO-AR-000410"
+        };
+
+        // ==========================================================
+        // ===== NUEVA LISTA DE MODELOS DE ESTRUCTURAS =====
+        // ==========================================================
+        private static readonly List<string> MODELOS_ESTRUCTURAS = new List<string>
+        {
+            "200114-CCC02-MO-ES-045500", "200114-CCC02-MO-ES-045600",
+            "200114-CCC02-MO-ES-046900", "200114-CCC02-MO-ES-047000",
+            "200114-CCC02-MO-ES-047100", "200114-CCC02-MO-ES-047200",
+            "200114-CCC02-MO-ES-047300", "200114-CCC02-MO-ES-047400",
+            "200114-CCC02-MO-ES-047500", "200114-CCC02-MO-ES-047600",
+            "200114-CCC02-MO-ES-047700", "200114-CCC02-MO-ES-047800",
+            "200114-CCC02-MO-ES-047900", "200114-CCC02-MO-ES-048000",
+            "200114-CCC02-MO-ES-000410"
+        };
+
         private readonly Dictionary<string, string> _aliasEncabezados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "DIGO", "CODIGO" }, { "DESCRIP", "DESCRIPCION" }, { "ACTIV", "ACTIVO" },
             { "DULO", "MODULO" }, { "NIVE", "NIVEL" }, { "AMBIEN", "AMBIENTE" },
-            { "EJE", "EJES" }, { "PARC", "PARCIAL" }, { "UNID", "UNIDAD" }, { "ID", "ID" }
+            { "EJE", "EJES" }, { "PARC", "PARCIAL" }, { "UNID", "UNIDAD" },
+            { "ID DE ELEMENTO", "ID" },
+            { "ID", "ID" }
         };
 
-        private readonly List<string> _expectedHeadings = new List<string>
+        private readonly List<string> _baseExpectedHeadings = new List<string>
         {
             "CODIGO", "DESCRIPCION", "ACTIVO", "MODULO", "NIVEL",
-            "AMBIENTE", "PARCIAL", "UNIDAD", "ID"
+            "AMBIENTE", // <--- Este es el índice 5
+            "PARCIAL", "UNIDAD", "ID"
         };
         private const int _expectedHeadingCount = 9;
 
 
-        public ScheduleProcessor(Document doc, GoogleSheetsService sheetsService, ManualScheduleService manualScheduleService)
+        public ScheduleProcessor(Document doc, GoogleSheetsService sheetsService, ManualScheduleService manualScheduleService, string spreadsheetId)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
             _sheetsService = sheetsService ?? throw new ArgumentNullException(nameof(sheetsService));
-            // (MODIFICADO) El servicio G-Sheets se mantiene, el ManualScheduleService ya no es necesario aquí.
+            _docTitle = doc.Title;
+            _spreadsheetId = spreadsheetId;
+            _ejesKeywords = new List<string>();
+
+            LoadEjesKeywords();
         }
 
-        // =================================================================
-        // ===== MÉTODO #1: Auditoría de "Tablas de Metrados" =====
-        // =================================================================
+        private void LoadEjesKeywords()
+        {
+            try
+            {
+                var data = _sheetsService.ReadData(_spreadsheetId, "'FIELD EJES'!B2:B");
+                if (data == null || data.Count == 0) return;
+
+                foreach (var row in data)
+                {
+                    string keyword = GoogleSheetsService.GetCellValue(row, 0);
+                    if (!string.IsNullOrWhiteSpace(keyword))
+                    {
+                        _ejesKeywords.Add(keyword.ToUpper());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error al cargar 'FIELD EJES': {ex.Message}");
+            }
+        }
 
         public ElementData ProcessSingleElement(ViewSchedule view, string assemblyCode)
         {
@@ -65,7 +119,7 @@ namespace TL60_RevisionDeTablas.Services
             // --- Ejecutar Auditorías ---
             var auditViewName = ProcessViewName(view, assemblyCode);
             var auditFilter = ProcessFilters(definition, elementData.CodigoIdentificacion);
-            var auditColumns = ProcessColumns(definition);
+            var auditColumns = ProcessColumns(view);
             var auditContent = ProcessContent(definition);
             var auditLinks = ProcessIncludeLinks(definition);
 
@@ -75,7 +129,6 @@ namespace TL60_RevisionDeTablas.Services
             elementData.AuditResults.Add(auditContent);
             elementData.AuditResults.Add(auditLinks);
 
-            // Si el A.C. es inválido, añadir un error fatal
             if (assemblyCode == "INVALID_AC")
             {
                 elementData.AuditResults.Add(new AuditItem
@@ -92,16 +145,17 @@ namespace TL60_RevisionDeTablas.Services
             if (auditFilter.Estado == EstadoParametro.Corregir) auditFilter.Tag = auditFilter.Tag;
             if (auditContent.Estado == EstadoParametro.Corregir) auditContent.Tag = true;
             if (auditLinks.Estado == EstadoParametro.Corregir) auditLinks.Tag = true;
-            // No se añade Tag para Columnas (Advertencia)
+            if (auditColumns.Estado == EstadoParametro.Corregir) auditColumns.Tag = auditColumns.Tag;
 
             elementData.DatosCompletos = elementData.AuditResults.All(r => r.Estado == EstadoParametro.Correcto);
 
             return elementData;
         }
 
-        // =================================================================
-        // ===== (NUEVO) Auditoría 0: VIEW NAME (Simplificada) =====
-        // =================================================================
+        // ... (ProcessViewName y sección de Filtro se mantienen igual que en la corrección anterior) ...
+        // (Omitidos por brevedad, pero deben estar aquí)
+
+        #region Auditoría 1: FILTRO (Sin cambios)
         private AuditItem ProcessViewName(ViewSchedule view, string assemblyCode)
         {
             var item = new AuditItem
@@ -161,9 +215,6 @@ namespace TL60_RevisionDeTablas.Services
 
             return item;
         }
-
-
-        #region Auditoría 1: FILTRO (Lógica de ESTADOS modificada)
 
         private AuditItem ProcessFilters(ScheduleDefinition definition, string assemblyCode)
         {
@@ -317,7 +368,6 @@ namespace TL60_RevisionDeTablas.Services
             return item;
         }
 
-        // ... (Funciones auxiliares de Filtro: IsAssemblyCodeField, GetFilterInfo, etc. van aquí) ...
         private bool IsAssemblyCodeField(string fieldName)
         {
             if (string.IsNullOrEmpty(fieldName)) return false;
@@ -375,86 +425,178 @@ namespace TL60_RevisionDeTablas.Services
 
         #endregion
 
-        #region Auditoría 2: COLUMNAS (MODIFICADO a Advertencia)
+        // ==========================================================
+        // ===== AUDITORÍA 2: COLUMNAS (LÓGICA COMPLETAMENTE NUEVA) =====
+        // ==========================================================
+        #region Auditoría 2: COLUMNAS (Ahora corregible)
 
-        private AuditItem ProcessColumns(ScheduleDefinition definition)
+        /// <summary>
+        /// (NUEVO) Obtiene el 6to encabezado esperado (AMBIENTE o EJES)
+        /// </summary>
+        private string GetDynamicExpectedHeader(string viewName)
         {
+            // ==========================================================
+            // ===== NUEVA LÓGICA: 1. Modelos de Estructuras =====
+            // ==========================================================
+            bool isEstriModel = MODELOS_ESTRUCTURAS.Any(modelName => _docTitle.Contains(modelName));
+            if (isEstriModel)
+            {
+                return "EJES"; // Forzado para Estructuras
+            }
+
+            // ==========================================================
+            // ===== LÓGICA ANTERIOR: 2. Modelos de Arquitectura =====
+            // ==========================================================
+            bool isArchiModel = MODELOS_ARQUITECTURA.Any(modelName => _docTitle.Contains(modelName));
+            if (isArchiModel)
+            {
+                // Es de Arq. ¿El nombre de la TABLA contiene una palabra clave?
+                string viewNameUpper = viewName.ToUpper();
+                bool usesEjes = _ejesKeywords.Any(keyword => viewNameUpper.Contains(keyword));
+
+                return usesEjes ? "EJES" : "AMBIENTE";
+            }
+
+            // ==========================================================
+            // ===== LÓGICA ANTERIOR: 3. Default =====
+            // ==========================================================
+            return "AMBIENTE"; // Default para todos los demás modelos
+        }
+
+
+        private AuditItem ProcessColumns(ViewSchedule view)
+        {
+            var definition = view.Definition;
             var item = new AuditItem
             {
                 AuditType = "COLUMNAS",
-                IsCorrectable = false // No se puede corregir automáticamente
+                IsCorrectable = false, // Inicia como Falso
+                Estado = EstadoParametro.Correcto // Inicia como Correcto
             };
 
+            // (NUEVO) Lista de encabezados esperados dinámicos
+            var dynamicExpectedHeadings = new List<string>(_baseExpectedHeadings);
+            dynamicExpectedHeadings[5] = GetDynamicExpectedHeader(view.Name); // Índice 5 = AMBIENTE/EJES
+
             var actualHeadings = new List<string>();
+            var actualFields = new List<ScheduleField>();
+
             for (int i = 0; i < definition.GetFieldCount(); i++)
             {
                 var field = definition.GetField(i);
                 if (!field.IsHidden)
                 {
                     actualHeadings.Add(field.ColumnHeading.ToUpper().Trim());
+                    actualFields.Add(field);
                 }
             }
 
-            // (MODIFICADO) Conteo -> ADVERTENCIA
-            if (actualHeadings.Count != _expectedHeadingCount)
+            // ==========================================================
+            // ===== NUEVA LÓGICA: CASO 1: Hay MÁS de 9 columnas =====
+            // ==========================================================
+            if (actualHeadings.Count > _expectedHeadingCount)
             {
-                item.Estado = EstadoParametro.Vacio; // Advertencia
-                item.Mensaje = $"Advertencia: Se esperaban {_expectedHeadingCount} columnas visibles, pero se encontraron {actualHeadings.Count}.";
-                item.ValorActual = $"Total: {actualHeadings.Count}\n" + string.Join("\n", actualHeadings);
-                item.ValorCorregido = $"Total: {_expectedHeadingCount}\n" + string.Join("\n", _expectedHeadings);
+                item.Estado = EstadoParametro.Corregir;
+                item.IsCorrectable = true;
+
+                var fieldsToHide = new List<ScheduleField>();
+                var fieldsToHideNames = new List<string>();
+
+                for (int i = 0; i < actualFields.Count; i++)
+                {
+                    // Si el encabezado actual NO está en la lista de 9 correctos, marcar para ocultar
+                    if (!dynamicExpectedHeadings.Contains(actualHeadings[i], StringComparer.OrdinalIgnoreCase))
+                    {
+                        fieldsToHide.Add(actualFields[i]);
+                        fieldsToHideNames.Add(actualFields[i].ColumnHeading);
+                    }
+                }
+
+                item.Tag = fieldsToHide; // Guardar la LISTA de campos a ocultar
+                item.ValorActual = string.Join("\n", actualHeadings);
+                item.ValorCorregido = string.Join("\n", dynamicExpectedHeadings); // Muestra los 9 correctos
+                item.Mensaje = $"A corregir: Se esperaban 9 columnas visibles, pero se encontraron {actualHeadings.Count}.\n" +
+                               $"Se ocultarán los siguientes campos:\n" +
+                               string.Join("\n", fieldsToHideNames);
                 return item;
             }
 
-            bool isCorrect = true;
-            // (Lógica de revisión de encabezados omitida por brevedad, es la misma que ya tenías)
-            for (int i = 0; i < _expectedHeadingCount; i++)
+            // ==========================================================
+            // ===== LÓGICA ANTERIOR: CASO 2: Hay EXACTAMENTE 9 columnas (Renombrar) =====
+            // ==========================================================
+            if (actualHeadings.Count == _expectedHeadingCount)
             {
-                string actual = actualHeadings[i];
-                string expectedBase = _expectedHeadings[i];
-                string corrected = actual;
-                if (i == 5)
+                var headingsToFix = new Dictionary<ScheduleField, string>();
+                var correctedHeadings = new List<string>();
+
+                for (int i = 0; i < _expectedHeadingCount; i++)
                 {
-                    if (actual == expectedBase || actual == "EJES") { }
-                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue)) corrected = aliasValue;
-                    else isCorrect = false;
+                    string actual = actualHeadings[i];
+                    string expected = dynamicExpectedHeadings[i];
+                    ScheduleField field = actualFields[i];
+
+                    if (actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+                    {
+                        correctedHeadings.Add(actual); // Es correcto
+                        continue;
+                    }
+
+                    // No coincide. Marcar para corregir
+                    item.Estado = EstadoParametro.Corregir;
+                    item.IsCorrectable = true;
+                    string correctedValue = expected; // Por defecto, el valor de la posición
+
+                    // Intentar encontrar corrección con "Contains(Key)"
+                    bool foundAlias = false;
+                    foreach (var aliasKey in _aliasEncabezados.Keys.OrderByDescending(k => k.Length))
+                    {
+                        if (actual.Contains(aliasKey))
+                        {
+                            correctedValue = _aliasEncabezados[aliasKey];
+                            foundAlias = true;
+                            break;
+                        }
+                    }
+
+                    if (foundAlias && !correctedValue.Equals(expected, StringComparison.OrdinalIgnoreCase))
+                    {
+                        correctedValue = expected;
+                    }
+
+                    correctedHeadings.Add(correctedValue);
+                    headingsToFix[field] = correctedValue;
+                }
+
+                item.ValorActual = string.Join("\n", actualHeadings);
+                item.ValorCorregido = string.Join("\n", correctedHeadings);
+
+                if (item.IsCorrectable)
+                {
+                    item.Mensaje = "Corregir: Los encabezados no coinciden con el estándar (ALIAS).";
+                    item.Tag = headingsToFix; // Guardar el DICCIONARIO de campos a renombrar
                 }
                 else
                 {
-                    if (actual == expectedBase) { }
-                    else if (_aliasEncabezados.TryGetValue(actual, out string aliasValue)) corrected = aliasValue;
+                    item.Estado = EstadoParametro.Correcto;
+                    item.Mensaje = "Correcto: Encabezados correctos.";
                 }
-                if (i == 5)
-                {
-                    if (corrected != "AMBIENTE" && corrected != "EJES") isCorrect = false;
-                }
-                else if (corrected != expectedBase)
-                {
-                    isCorrect = false;
-                }
+                return item;
             }
 
-            item.ValorActual = string.Join("\n", actualHeadings);
-            item.ValorCorregido = string.Join("\n", _expectedHeadings);
-
-            // (MODIFICADO) Encabezados -> ADVERTENCIA
-            if (!isCorrect)
-            {
-                item.Estado = EstadoParametro.Vacio; // Advertencia
-                item.Mensaje = "Advertencia: Los encabezados no coinciden con el estándar (ALIAS).";
-            }
-            else
-            {
-                item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Correcto: Encabezados correctos.";
-            }
-
+            // ==========================================================
+            // ===== CASO 3: Hay MENOS de 9 columnas (Advertencia) =====
+            // ==========================================================
+            item.Estado = EstadoParametro.Vacio; // Advertencia
+            item.Mensaje = $"Advertencia: Se esperaban 9 columnas visibles, pero se encontraron {actualHeadings.Count}.";
+            item.ValorActual = $"Total: {actualHeadings.Count}\n" + string.Join("\n", actualHeadings);
+            item.ValorCorregido = $"Total: {_expectedHeadingCount}\n" + string.Join("\n", dynamicExpectedHeadings);
             return item;
         }
 
+
         #endregion
 
-        #region Auditoría 3: CONTENIDO (Itemize - Prefijo de Mensaje)
-
+        #region Auditoría 3: CONTENIDO (Sin cambios)
         private AuditItem ProcessContent(ScheduleDefinition definition)
         {
             var item = new AuditItem
@@ -481,11 +623,9 @@ namespace TL60_RevisionDeTablas.Services
             }
             return item;
         }
-
         #endregion
 
-        #region (NUEVO) Auditoría 4: INCLUDE LINKS
-
+        #region Auditoría 4: LINKS (Sin cambios)
         private AuditItem ProcessIncludeLinks(ScheduleDefinition definition)
         {
             var item = new AuditItem
@@ -512,13 +652,11 @@ namespace TL60_RevisionDeTablas.Services
             }
             return item;
         }
-
         #endregion
 
-        // =================================================================
-        // ===== MÉTODOS DE CREACIÓN DE TRABAJOS (Jobs) =====
-        // =================================================================
-
+        // ... (Sección de Métodos de Creación de Jobs se mantiene igual que en la corrección anterior) ...
+        // (Omitidos por brevedad, pero deben estar aquí)
+        #region Creación de Jobs (Sin cambios)
         public ElementData CreateRenamingJob(ViewSchedule view)
         {
             string nombreActual = view.Name;
@@ -533,30 +671,25 @@ namespace TL60_RevisionDeTablas.Services
             return CreateJobElementData(view, "MANUAL", "Corregir: Tabla de Metrado Manual. Se reclasificará.", jobData);
         }
 
-        // (NUEVO)
         public ElementData CreateCopyReclassifyJob(ViewSchedule view)
         {
             var jobData = new RenamingJobData { NuevoNombre = view.Name, NuevoGrupoVista = "REVISAR", NuevoSubGrupoVista = string.Empty };
-            return CreateJobElementData(view, "COPIA", "Corregir: La tabla parece ser una copia y será reclasificada.", jobData);
+            return CreateJobElementData(view, "COPIA", "Corregir: La tabla parece ser una copia y será reagrupada.", jobData);
         }
 
-        // (NUEVO)
         public ElementData CreateWipReclassifyJob(ViewSchedule view)
         {
             var jobData = new RenamingJobData { NuevoNombre = view.Name, NuevoGrupoVista = "00 TRABAJO EN PROCESO - WIP", NuevoSubGrupoVista = "SOPORTE BIM" };
             return CreateJobElementData(view, "CLASIFICACIÓN (WIP)", "Corregir: Tabla de trabajo interno. Será reclasificada.", jobData);
         }
 
-        // (NUEVO) Helper para crear trabajos
         private ElementData CreateJobElementData(ViewSchedule view, string auditType, string mensaje, RenamingJobData jobData)
         {
-            // (NUEVO) Leer valores actuales
             string grupoActual = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? "(Vacío)";
             string subGrupoActual = view.LookupParameter("SUBGRUPO DE VISTA")?.AsString() ?? "(Vacío)";
 
-            // (NUEVO) Construir strings de valor
-            string valorActualStr = $"Grupo: {grupoActual}\nSubGrupo: {subGrupoActual}";
-            string valorCorregidoStr = $"Grupo: {jobData.NuevoGrupoVista}\nSubGrupo: {jobData.NuevoSubGrupoVista}";
+            string valorActualStr = $"GRUPO DE VISTA: {grupoActual}\nSUBGRUPO DE VISTA: {subGrupoActual}";
+            string valorCorregidoStr = $"GRUPO DE VISTA: {jobData.NuevoGrupoVista}\nSUBGRUPO DE VISTA: {jobData.NuevoSubGrupoVista}";
 
             var elementData = new ElementData
             {
@@ -581,5 +714,6 @@ namespace TL60_RevisionDeTablas.Services
             elementData.AuditResults.Add(auditItem);
             return elementData;
         }
+        #endregion
     }
 }

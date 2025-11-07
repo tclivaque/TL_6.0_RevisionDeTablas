@@ -23,9 +23,10 @@ namespace TL60_RevisionDeTablas.Services
             int filtrosCorregidos = 0;
             int contenidosCorregidos = 0;
             int tablasReclasificadas = 0;
-            int nombresCorregidos = 0; // (NUEVO)
-            int linksIncluidos = 0; // (NUEVO)
-            int columnasCorregidas = 0; // (Solo para consistencia, aunque ahora es advertencia)
+            int nombresCorregidos = 0;
+            int linksIncluidos = 0;
+            int columnasRenombradas = 0; // (NUEVO) Contador específico
+            int columnasOcultadas = 0; // (NUEVO) Contador específico
 
             using (Transaction trans = new Transaction(_doc, "Corregir Auditoría de Tablas"))
             {
@@ -69,7 +70,14 @@ namespace TL60_RevisionDeTablas.Services
                         // ==========================================================
                         // ===== 2. Ejecutar RENOMBRADO DE CLASIFICACIÓN (WIP, MANUAL, SOPORTE, COPIA) =====
                         // ==========================================================
-                        var renameAudit = elementData.AuditResults.FirstOrDefault(a => (a.AuditType.StartsWith("CLASIFICACIÓN") || a.AuditType == "MANUAL") && a.IsCorrectable);
+
+                        // ==========================================================
+                        // ===== CORRECCIÓN BUG "COPIA" =====
+                        // ==========================================================
+                        var renameAudit = elementData.AuditResults.FirstOrDefault(a =>
+                            (a.AuditType.StartsWith("CLASIFICACIÓN") || a.AuditType == "MANUAL" || a.AuditType == "COPIA")
+                            && a.IsCorrectable);
+
                         if (renameAudit != null)
                         {
                             var jobData = renameAudit.Tag as RenamingJobData;
@@ -104,7 +112,7 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // --- (NUEVO) 5. Corregir INCLUDE LINKS ---
+                        // --- 5. Corregir INCLUDE LINKS ---
                         var linksAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "LINKS" && a.IsCorrectable);
                         if (linksAudit != null)
                         {
@@ -116,16 +124,29 @@ namespace TL60_RevisionDeTablas.Services
                             }
                         }
 
-                        // --- 6. Corregir COLUMNAS (Encabezados) ---
-                        // (Aunque es Advertencia, si tuviera un Tag 'Corregible', se ejecutaría)
+                        // ==========================================================
+                        // ===== 6. Corregir COLUMNAS (Renombrar u Ocultar) =====
+                        // ==========================================================
                         var columnAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "COLUMNAS" && a.IsCorrectable);
-                        if (columnAudit != null)
+                        if (columnAudit != null && columnAudit.Tag != null)
                         {
-                            var headingsToFix = columnAudit.Tag as Dictionary<ScheduleField, string>;
-                            if (headingsToFix != null && WriteHeadings(headingsToFix, result.Errores, elementData.Nombre))
+                            // CASO A: Renombrar (El Tag es un Diccionario)
+                            if (columnAudit.Tag is Dictionary<ScheduleField, string> headingsToFix)
                             {
-                                columnasCorregidas += headingsToFix.Count;
-                                tablaModificada = true;
+                                if (WriteHeadings(headingsToFix, result.Errores, elementData.Nombre))
+                                {
+                                    columnasRenombradas += headingsToFix.Count;
+                                    tablaModificada = true;
+                                }
+                            }
+                            // CASO B: Ocultar (El Tag es una Lista)
+                            else if (columnAudit.Tag is List<ScheduleField> fieldsToHide)
+                            {
+                                if (HideColumns(fieldsToHide, result.Errores, elementData.Nombre))
+                                {
+                                    columnasOcultadas += fieldsToHide.Count;
+                                    tablaModificada = true;
+                                }
                             }
                         }
 
@@ -137,11 +158,16 @@ namespace TL60_RevisionDeTablas.Services
 
                     trans.Commit();
                     result.Exitoso = true;
-                    // (MODIFICADO) Mensaje de éxito actualizado
+
+                    // ==========================================================
+                    // ===== CAMBIO: Mensaje de éxito actualizado =====
+                    // ==========================================================
                     result.Mensaje = $"Corrección completa.\n\n" +
-                                     $"Tablas únicas modificadas: {tablasCorregidas}\n\n" + // <-- LÍNEA AÑADIDA
+                                     $"Tablas únicas modificadas: {tablasCorregidas}\n\n" +
                                      $"Detalles:\n" +
                                      $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
+                                     $"- Encabezados renombrados: {columnasRenombradas}\n" +
+                                     $"- Columnas ocultadas: {columnasOcultadas}\n" +
                                      $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
                                      $"- Filtros corregidos: {filtrosCorregidos}\n" +
                                      $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
@@ -158,33 +184,24 @@ namespace TL60_RevisionDeTablas.Services
             return result;
         }
 
-        /// <summary>
-        /// (MODIFICADO) Renombra la tabla (si es necesario) y actualiza sus parámetros de clasificación
-        /// </summary>
         private bool RenameAndReclassify(ViewSchedule view, RenamingJobData jobData, List<string> errores)
         {
             try
             {
-                // 1. Renombrar la vista (Solo si el nombre nuevo es diferente)
                 if (view.Name != jobData.NuevoNombre)
                 {
                     view.Name = jobData.NuevoNombre;
                 }
-
-                // 2. Establecer GRUPO DE VISTA
                 Parameter paramGrupo = view.LookupParameter("GRUPO DE VISTA");
                 if (paramGrupo != null && !paramGrupo.IsReadOnly)
                 {
                     paramGrupo.Set(jobData.NuevoGrupoVista);
                 }
-
-                // 3. Establecer SUBGRUPO DE VISTA
                 Parameter paramSubGrupo = view.LookupParameter("SUBGRUPO DE VISTA");
                 if (paramSubGrupo != null && !paramSubGrupo.IsReadOnly)
                 {
                     paramSubGrupo.Set(jobData.NuevoSubGrupoVista);
                 }
-
                 return true;
             }
             catch (Exception ex)
@@ -213,6 +230,29 @@ namespace TL60_RevisionDeTablas.Services
             catch (Exception ex)
             {
                 errores.Add($"Error al escribir encabezados en '{nombreTabla}': {ex.Message}");
+                return false;
+            }
+        }
+
+        // ==========================================================
+        // ===== NUEVO MÉTODO: Ocultar Columnas =====
+        // ==========================================================
+        private bool HideColumns(List<ScheduleField> fieldsToHide, List<string> errores, string nombreTabla)
+        {
+            try
+            {
+                foreach (var field in fieldsToHide)
+                {
+                    if (field != null && field.IsValidObject && !field.IsHidden)
+                    {
+                        field.IsHidden = true;
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errores.Add($"Error al ocultar columnas en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }

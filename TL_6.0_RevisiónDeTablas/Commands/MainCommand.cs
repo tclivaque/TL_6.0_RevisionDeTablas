@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
-using System.Text.RegularExpressions; // (NUEVO)
+using System.Text.RegularExpressions;
 using TL60_RevisionDeTablas.Models;
 using TL60_RevisionDeTablas.Services;
 using TL60_RevisionDeTablas.UI;
@@ -19,15 +19,13 @@ namespace TL60_RevisionDeTablas.Commands
     {
         private const string SPREADSHEET_ID = "14bYBONt68lfM-sx6iIJxkYExXS0u7sdgijEScL3Ed3Y";
 
-        // (NUEVO) Lista de nombres WIP (de proyecto 5.0)
         private static readonly List<string> NOMBRES_WIP = new List<string>
         {
             "TL", "TITO", "PDONTADENEA", "ANDREA", "EFRAIN",
             "PROYECTOSBIM", "ASISTENTEBIM", "LUIS", "DIEGO", "JORGE", "MIGUEL"
         };
 
-        // (NUEVO) Regex para extraer Assembly Code
-        private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2}\.)+\d{2}");
+        private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2,3}\.)+\d{2,3}");
 
         public Result Execute(
             ExternalCommandData commandData,
@@ -47,7 +45,7 @@ namespace TL60_RevisionDeTablas.Commands
                 var manualScheduleService = new ManualScheduleService(sheetsService, docTitle);
                 manualScheduleService.LoadClassificationData(SPREADSHEET_ID);
 
-                var processor = new ScheduleProcessor(doc, sheetsService, manualScheduleService);
+                var processor = new ScheduleProcessor(doc, sheetsService, manualScheduleService, SPREADSHEET_ID);
 
                 var elementosData = new List<ElementData>();
 
@@ -58,7 +56,7 @@ namespace TL60_RevisionDeTablas.Commands
                     .Cast<ViewSchedule>();
 
                 // ==========================================================
-                // ===== INICIO DE LÓGICA DE BIFURCACIÓN (MODIFICADA) =====
+                // ===== LÓGICA DE BIFURCACIÓN (MODIFICADA) =====
                 // ==========================================================
 
                 foreach (ViewSchedule view in allSchedules)
@@ -78,6 +76,20 @@ namespace TL60_RevisionDeTablas.Commands
                         // -----------------------------------------------------------------
                         if (viewNameUpper.Contains("COPY") || viewNameUpper.Contains("COPIA"))
                         {
+                            // ==========================================================
+                            // ===== CORRECCIÓN: Evitar Falso Positivo "COPIA" =====
+                            // ==========================================================
+                            string grupoVista = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? string.Empty;
+                            string subGrupoVista = view.LookupParameter("SUBGRUPO DE VISTA")?.AsString() ?? string.Empty;
+
+                            // El estado corregido de "COPIA" es "REVISAR" y "" (vacío)
+                            if (grupoVista.Equals("REVISAR", StringComparison.OrdinalIgnoreCase) &&
+                                string.IsNullOrEmpty(subGrupoVista))
+                            {
+                                continue; // Ya está corregido, no reportar.
+                            }
+                            // ==========================================================
+
                             elementosData.Add(processor.CreateCopyReclassifyJob(view));
                             continue; // Fin del análisis para esta tabla
                         }
@@ -99,6 +111,16 @@ namespace TL60_RevisionDeTablas.Commands
 
                         if (scheduleType.Equals("MANUAL", StringComparison.OrdinalIgnoreCase))
                         {
+                            // (Corrección Falso Positivo "MANUAL")
+                            string grupoVista = view.LookupParameter("GRUPO DE VISTA")?.AsString() ?? string.Empty;
+                            string subGrupoVista = view.LookupParameter("SUBGRUPO DE VISTA")?.AsString() ?? string.Empty;
+
+                            if (grupoVista.Equals("REVISAR", StringComparison.OrdinalIgnoreCase) &&
+                                subGrupoVista.Equals("METRADO MANUAL", StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue; // Ya está corregido, no reportar.
+                            }
+
                             elementosData.Add(processor.CreateManualRenamingJob(view));
                             continue; // Fin del análisis para esta tabla
                         }
