@@ -590,13 +590,18 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 return item;
             }
 
-            // (¡CORRECCIÓN!) Usar 'RESERVED_LEGACY_COUNT_PARAM' en lugar de 'ELEM_COUNT'
-            if (parcialField.ParameterId.IntegerValue == (int)BuiltInParameter.RESERVED_LEGACY_COUNT_PARAM)
+            // ==========================================================
+            // ===== (¡LA LÍNEA CORREGIDA!)
+            // ==========================================================
+            // (Línea 594 aprox)
+            // Comprobar si el FieldType es 'Count'. Esta es la forma correcta.
+            if (parcialField.FieldType == ScheduleFieldType.Count)
             {
                 item.Estado = EstadoParametro.Correcto;
                 item.Mensaje = "Correcto: El campo 'Recuento' (Count) no requiere formato.";
                 return item;
             }
+            // ==========================================================
 
             try
             {
