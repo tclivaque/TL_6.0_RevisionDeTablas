@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TL60_RevisionDeTablas.Models;
+using Autodesk.Revit.UI;
 
 namespace TL60_RevisionDeTablas.Plugins.Tablas
 {
@@ -11,7 +12,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
     {
         private readonly Document _doc;
         private const string EMPRESA_PARAM_NAME = "EMPRESA";
-        // (¡CORREGIDO! Constante añadida)
         private const string EMPRESA_PARAM_VALUE = "RNG";
 
 
@@ -34,7 +34,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             int parcialCorregidos = 0;
             int empresaCorregidos = 0;
 
-            // (¡NUEVO!) Encontrar el Parámetro "EMPRESA" una sola vez
             ParameterElement empresaParamElem = new FilteredElementCollector(_doc)
                 .OfClass(typeof(ParameterElement))
                 .Cast<ParameterElement>()
@@ -75,12 +74,11 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         }
 
                         // --- 2. Ejecutar RENOMBRADO DE CLASIFICACIÓN ---
-                        // (¡MODIFICADO!) Ahora busca más tipos de auditoría
                         var renameAudit = elementData.AuditResults.FirstOrDefault(a =>
                             (a.AuditType.StartsWith("CLASIFICACIÓN") ||
                              a.AuditType == "MANUAL" ||
                              a.AuditType == "COPIA" ||
-                             a.AuditType.StartsWith("WIP")) // <-- Lógica expandida
+                             a.AuditType.StartsWith("WIP"))
                             && a.IsCorrectable);
 
                         if (renameAudit != null)
@@ -151,7 +149,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             }
                         }
 
-                        // --- 7. Corregir FORMATO PARCIAL ---
+
+                        // ==========================================================
+                        // ===== 7. Corregir FORMATO PARCIAL (¡SOLUCIÓN V7!)
+                        // ==========================================================
                         var parcialAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FORMATO PARCIAL" && a.IsCorrectable);
                         if (parcialAudit != null && parcialAudit.Tag is ScheduleFieldId)
                         {
@@ -163,11 +164,19 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                                 if (field != null && field.IsValidObject)
                                 {
                                     FormatOptions options = field.GetFormatOptions();
+
                                     options.UseDefault = false;
-                                    options.SetSymbolTypeId(new ForgeTypeId());
                                     options.Accuracy = 0.01;
+                                    options.RoundingMethod = RoundingMethod.Nearest;
+                                    options.SetSymbolTypeId(new ForgeTypeId());
+
+                                    // --- ¡ESTA ES LA LÍNEA DE CORRECCIÓN (Línea 178)! ---
+                                    // Cambiamos UnitTypeId.Fixed por UnitTypeId.General
+                                    // "General" es aceptado por más tipos de campos.
+                                    options.SetUnitTypeId(UnitTypeId.General);
 
                                     field.SetFormatOptions(options);
+
                                     parcialCorregidos++;
                                     tablaModificada = true;
                                 }
@@ -178,8 +187,9 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             }
                         }
 
+
                         // ==========================================================
-                        // ===== 8. (¡NUEVO!) Corregir PARÁMETRO EMPRESA
+                        // ===== 8. Corregir PARÁMETRO EMPRESA
                         // ==========================================================
                         var empresaAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "PARÁMETRO EMPRESA" && a.IsCorrectable);
                         if (empresaAudit != null)
@@ -190,20 +200,16 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                                 if (param == null && empresaParamElem != null)
                                 {
-                                    // El parámetro existe pero no está vinculado a esta tabla.
-                                    // Esto requiere una modificación de BINDING, que este add-in no debe hacer.
-                                    // El Add-in TL_1_VerificarParametroEmpresa es el encargado de eso.
                                     result.Errores.Add($"Error en tabla '{elementData.Nombre}': El parámetro 'EMPRESA' no está vinculado. Ejecute el Add-in 'Verificar Parámetro Empresa'.");
                                 }
                                 else if (param != null && !param.IsReadOnly)
                                 {
-                                    param.Set(EMPRESA_PARAM_VALUE); // <-- (Línea 140)
+                                    param.Set(EMPRESA_PARAM_VALUE);
                                     empresaCorregidos++;
                                     tablaModificada = true;
                                 }
                                 else if (param == null && empresaParamElem == null)
                                 {
-                                    // El parámetro 'EMPRESA' ni siquiera existe en el proyecto.
                                     result.Errores.Add($"Error en tabla '{elementData.Nombre}': No se encontró el Parámetro Compartido 'EMPRESA' en el proyecto.");
                                 }
                             }
@@ -217,32 +223,60 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             tablasCorregidas++;
                         }
+                    } // Fin del foreach
+
+
+                    // ==========================================================
+                    // ===== 9. Lógica de Éxito
+                    // ==========================================================
+                    if (result.Errores.Count == 0)
+                    {
+                        result.Exitoso = true;
                     }
 
                     trans.Commit();
-                    result.Exitoso = true;
-
-                    result.Mensaje = $"Corrección completa.\n\n" +
-                                     $"Tablas únicas modificadas: {tablasCorregidas}\n\n" +
-                                     $"Detalles:\n" +
-                                     $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
-                                     $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
-                                     $"- Parámetros 'EMPRESA' corregidos: {empresaCorregidos}\n" +
-                                     $"- Filtros corregidos: {filtrosCorregidos}\n" +
-                                     $"- Formatos 'PARCIAL' corregidos: {parcialCorregidos}\n" +
-                                     $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
-                                     $"- 'Include Links' activados: {linksIncluidos}\n" +
-                                     $"- Encabezados renombrados: {columnasRenombradas}\n" +
-                                     $"- Columnas ocultadas: {columnasOcultadas}";
                 }
                 catch (Exception ex)
                 {
                     trans.RollBack();
                     result.Exitoso = false;
-                    result.Mensaje = $"Error al escribir correcciones: {ex.Message}";
+                    result.Mensaje = $"Error fatal en la transacción: {ex.Message}";
                     result.Errores.Add(ex.Message);
                 }
+            } // Fin del using Transaction
+
+
+            // ==========================================================
+            // ===== 10. Lógica de Mensaje Final
+            // ==========================================================
+            if (result.Exitoso)
+            {
+                result.Mensaje = $"Corrección completa.\n\n" +
+                                 $"Tablas únicas modificadas: {tablasCorregidas}\n\n" +
+                                 $"Detalles:\n" +
+                                 $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
+                                 $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
+                                 $"- Parámetros 'EMPRESA' corregidos: {empresaCorregidos}\n" +
+                                 $"- Filtros corregidos: {filtrosCorregidos}\n" +
+                                 $"- Formatos 'PARCIAL' corregidos: {parcialCorregidos}\n" +
+                                 $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
+                                 $"- 'Include Links' activados: {linksIncluidos}\n" +
+                                 $"- Encabezados renombrados: {columnasRenombradas}\n" +
+                                 $"- Columnas ocultadas: {columnasOcultadas}";
             }
+            else
+            {
+                if (result.Errores.Count > 0)
+                {
+                    result.Mensaje = $"Se encontraron {result.Errores.Count} errores durante la corrección (la transacción fue revertida):\n\n" +
+                                     string.Join("\n", result.Errores.Take(5));
+                }
+                else if (string.IsNullOrEmpty(result.Mensaje))
+                {
+                    result.Mensaje = "La corrección se ejecutó pero no se detectaron errores. La transacción fue revertida.";
+                }
+            }
+
             return result;
         }
 
@@ -391,6 +425,8 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     return field;
                 }
             }
+            // --- ¡ESTA ES LA LÍNEA DE CORRECCIÓN (Línea 430)! ---
+            // Corregido el error 'módulo 0' a 'int i = 0'
             for (int i = 0; i < definition.GetFieldCount(); i++)
             {
                 var field = definition.GetField(i);

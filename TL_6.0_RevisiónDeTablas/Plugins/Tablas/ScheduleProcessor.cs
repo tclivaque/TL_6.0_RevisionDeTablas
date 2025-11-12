@@ -152,8 +152,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             // ==========================================================
             // ===== (¡AQUÍ ESTÁ LA CORRECCIÓN!)
             // ==========================================================
-            // (Línea 140 aprox)
-            if (auditParcial.Estado == EstadoParametro.Corregir) auditParcial.Tag = auditParcial.Tag;
+            // Se ha eliminado la línea conflictiva:
+            // if (auditParcial.Estado == EstadoParametro.Corregir) auditParcial.Tag = ...;
+            // El 'Tag' de 'auditParcial' (que contiene el ScheduleFieldId) 
+            // ya se asignó correctamente en 'ProcessParcialFormat' y no debe tocarse.
             // ==========================================================
 
             elementData.DatosCompletos = elementData.AuditResults.All(r => r.Estado == EstadoParametro.Correcto);
