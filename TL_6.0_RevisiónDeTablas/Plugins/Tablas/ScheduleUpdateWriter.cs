@@ -56,54 +56,30 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         ScheduleDefinition definition = view.Definition;
                         bool tablaModificada = false;
 
-                        // --- 1. Ejecutar RENOMBRADO DE TABLA (VIEW NAME) ---
-                        var viewNameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "VIEW NAME" && a.IsCorrectable);
-                        if (viewNameAudit != null)
+                        // --- 1. Corregir NOMBRE (VIEW NAME) ---
+                        var nameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "VIEW NAME" && a.IsCorrectable);
+                        if (nameAudit != null && nameAudit.Tag is RenamingJobData jobData)
                         {
-                            string nuevoNombre = viewNameAudit.Tag as string;
-                            if (!string.IsNullOrEmpty(nuevoNombre) && view.Name != nuevoNombre)
+                            if (RenameAndReclassify(view, jobData, result.Errores))
                             {
-                                try
-                                {
-                                    view.Name = nuevoNombre;
-                                    nombresCorregidos++;
-                                    tablaModificada = true;
-                                }
-                                catch (Exception ex) { result.Errores.Add($"Error al renombrar tabla '{elementData.Nombre}': {ex.Message}"); }
-                            }
-                        }
-
-                        // --- 2. Ejecutar RENOMBRADO DE CLASIFICACIÓN ---
-                        var renameAudit = elementData.AuditResults.FirstOrDefault(a =>
-                            (a.AuditType.StartsWith("CLASIFICACIÓN") ||
-                             a.AuditType == "MANUAL" ||
-                             a.AuditType == "COPIA" ||
-                             a.AuditType.StartsWith("WIP"))
-                            && a.IsCorrectable);
-
-                        if (renameAudit != null)
-                        {
-                            var jobData = renameAudit.Tag as RenamingJobData;
-                            if (jobData != null && RenameAndReclassify(view, jobData, result.Errores))
-                            {
+                                nombresCorregidos++;
                                 tablasReclasificadas++;
                                 tablaModificada = true;
                             }
                         }
 
-                        // --- 3. Corregir FILTROS ---
-                        var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTRO" && a.IsCorrectable);
-                        if (filterAudit != null)
+                        // --- 2. Corregir FILTROS ---
+                        var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTROS" && a.IsCorrectable);
+                        if (filterAudit != null && filterAudit.Tag is List<ScheduleFilterInfo> filtrosCorrectos)
                         {
-                            var filtrosACorregir = filterAudit.Tag as List<ScheduleFilterInfo>;
-                            if (filtrosACorregir != null && WriteFilters(definition, filtrosACorregir, result.Errores, elementData.Nombre))
+                            if (WriteFilters(definition, filtrosCorrectos, result.Errores, elementData.Nombre))
                             {
                                 filtrosCorregidos++;
                                 tablaModificada = true;
                             }
                         }
 
-                        // --- 4. Corregir CONTENIDO (Itemize) ---
+                        // --- 3. Corregir CONTENIDO (Itemize) ---
                         var contentAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "CONTENIDO" && a.IsCorrectable);
                         if (contentAudit != null)
                         {
@@ -115,7 +91,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             }
                         }
 
-                        // --- 5. Corregir INCLUDE LINKS ---
+                        // --- 4. Corregir INCLUDE LINKS ---
                         var linksAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "LINKS" && a.IsCorrectable);
                         if (linksAudit != null)
                         {
@@ -127,7 +103,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             }
                         }
 
-                        // --- 6. Corregir COLUMNAS ---
+                        // --- 5. Corregir COLUMNAS ---
                         var columnAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "COLUMNAS" && a.IsCorrectable);
                         if (columnAudit != null && columnAudit.Tag != null)
                         {
@@ -151,7 +127,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
 
                         // ==========================================================
-                        // ===== 7. Corregir FORMATO PARCIAL (¡SOLUCIÓN V7!)
+                        // ===== 6. Corregir FORMATO PARCIAL (¡SOLUCIÓN CORREGIDA!)
                         // ==========================================================
                         var parcialAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FORMATO PARCIAL" && a.IsCorrectable);
                         if (parcialAudit != null && parcialAudit.Tag is ScheduleFieldId)
@@ -163,18 +139,26 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                                 if (field != null && field.IsValidObject)
                                 {
+                                    // Leer el FormatOptions actual
                                     FormatOptions options = field.GetFormatOptions();
+
+                                    // ========================================
+                                    // ¡CORRECCIÓN APLICADA!
+                                    // Solo modificamos las propiedades de formato,
+                                    // SIN tocar el UnitTypeId (que causaba el error)
+                                    // ========================================
 
                                     options.UseDefault = false;
                                     options.Accuracy = 0.01;
                                     options.RoundingMethod = RoundingMethod.Nearest;
-                                    options.SetSymbolTypeId(new ForgeTypeId());
+                                    options.SetSymbolTypeId(new ForgeTypeId()); // Sin símbolo de unidad
 
-                                    // --- ¡ESTA ES LA LÍNEA DE CORRECCIÓN (Línea 178)! ---
-                                    // Cambiamos UnitTypeId.Fixed por UnitTypeId.General
-                                    // "General" es aceptado por más tipos de campos.
-                                    options.SetUnitTypeId(UnitTypeId.General);
+                                    // ❌ LÍNEA ELIMINADA (era la que causaba el error):
+                                    // options.SetUnitTypeId(UnitTypeId.General);
 
+                                    // ✅ NO tocamos el UnitTypeId - el campo conserva su tipo original
+
+                                    // Aplicar los cambios
                                     field.SetFormatOptions(options);
 
                                     parcialCorregidos++;
@@ -189,7 +173,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
 
                         // ==========================================================
-                        // ===== 8. Corregir PARÁMETRO EMPRESA
+                        // ===== 7. Corregir PARÁMETRO EMPRESA
                         // ==========================================================
                         var empresaAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "PARÁMETRO EMPRESA" && a.IsCorrectable);
                         if (empresaAudit != null)
@@ -227,7 +211,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
 
                     // ==========================================================
-                    // ===== 9. Lógica de Éxito
+                    // ===== 8. Lógica de Éxito
                     // ==========================================================
                     if (result.Errores.Count == 0)
                     {
@@ -247,7 +231,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
 
             // ==========================================================
-            // ===== 10. Lógica de Mensaje Final
+            // ===== 9. Lógica de Mensaje Final
             // ==========================================================
             if (result.Exitoso)
             {
@@ -281,7 +265,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
         }
 
         /// <summary>
-        /// (¡MODIFICADO!) Ahora también asigna SUBPARTIDA
+        /// Renombra la tabla y asigna GRUPO DE VISTA, SUBGRUPO DE VISTA y SUBPARTIDA
         /// </summary>
         private bool RenameAndReclassify(ViewSchedule view, RenamingJobData jobData, List<string> errores)
         {
@@ -304,7 +288,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     paramSubGrupo.Set(jobData.NuevoSubGrupoVista);
                 }
 
-                // (¡NUEVO!) Asignar el parámetro SUBPARTIDA
+                // Asignar el parámetro SUBPARTIDA
                 Parameter paramSubPartida = view.LookupParameter("SUBGRUPO DE VISTA_SUBPARTIDA");
                 if (paramSubPartida != null && !paramSubPartida.IsReadOnly && jobData.NuevoSubGrupoVistaSubpartida != null)
                 {
@@ -320,7 +304,8 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
         }
 
-        #region Métodos Helper Sin Cambios
+        #region Métodos Helper
+
         private bool WriteHeadings(Dictionary<ScheduleField, string> headingsToFix, List<string> errores, string nombreTabla)
         {
             try
@@ -342,6 +327,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 return false;
             }
         }
+
         private bool HideColumns(List<ScheduleField> fieldsToHide, List<string> errores, string nombreTabla)
         {
             try
@@ -361,6 +347,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 return false;
             }
         }
+
         private bool WriteFilters(ScheduleDefinition definition, List<ScheduleFilterInfo> filtrosCorrectos, List<string> errores, string nombreTabla)
         {
             try
@@ -387,6 +374,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 return false;
             }
         }
+
         private ScheduleFilter CreateScheduleFilter(ScheduleFieldId fieldId, ScheduleFilterInfo filtroInfo, List<string> errores, string nombreTabla)
         {
             if (filtroInfo.Value == null &&
@@ -413,6 +401,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     return null;
             }
         }
+
         private ScheduleField FindField(ScheduleDefinition definition, string fieldName)
         {
             for (int i = 0; i < definition.GetFieldCount(); i++)
@@ -425,19 +414,9 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     return field;
                 }
             }
-            // --- ¡ESTA ES LA LÍNEA DE CORRECCIÓN (Línea 430)! ---
-            // Corregido el error 'módulo 0' a 'int i = 0'
-            for (int i = 0; i < definition.GetFieldCount(); i++)
-            {
-                var field = definition.GetField(i);
-                var name = field.GetName();
-                if (name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return field;
-                }
-            }
             return null;
         }
+
         #endregion
     }
 }
