@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using TL60_RevisionDeTablas.Models;
 using Autodesk.Revit.UI;
 
@@ -13,11 +14,24 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
         private readonly Document _doc;
         private const string EMPRESA_PARAM_NAME = "EMPRESA";
         private const string EMPRESA_PARAM_VALUE = "RNG";
-
+        private static string _logPath;
 
         public ScheduleUpdateWriter(Document doc)
         {
             _doc = doc;
+            // Crear archivo de log en el escritorio
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            _logPath = Path.Combine(desktop, $"TL60_CorreccionTablas_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+
+            // Escribir encabezado
+            File.WriteAllText(_logPath, $"=== LOG DE CORRECCIÓN DE TABLAS ===\n");
+            File.AppendAllText(_logPath, $"Fecha: {DateTime.Now}\n");
+            File.AppendAllText(_logPath, $"Documento: {doc.Title}\n\n");
+        }
+
+        private void Log(string message)
+        {
+            File.AppendAllText(_logPath, $"[{DateTime.Now:HH:mm:ss}] {message}\n");
         }
 
         public ProcessingResult UpdateSchedules(List<ElementData> elementosData)
@@ -32,7 +46,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             int columnasRenombradas = 0;
             int columnasOcultadas = 0;
             int parcialCorregidos = 0;
+            int parcialSaltados = 0;
             int empresaCorregidos = 0;
+
+            Log("=== INICIO DE CORRECCIÓN ===\n");
 
             ParameterElement empresaParamElem = new FilteredElementCollector(_doc)
                 .OfClass(typeof(ParameterElement))
@@ -56,15 +73,19 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         ScheduleDefinition definition = view.Definition;
                         bool tablaModificada = false;
 
-                        // --- 1. Corregir NOMBRE (VIEW NAME) ---
+                        Log($"\n--- Procesando tabla: {elementData.Nombre} (ID: {elementData.ElementId.IntegerValue}) ---");
+
+                        // --- 1. Corregir NOMBRE ---
                         var nameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "VIEW NAME" && a.IsCorrectable);
                         if (nameAudit != null && nameAudit.Tag is RenamingJobData jobData)
                         {
+                            Log("  [1] Corrigiendo nombre...");
                             if (RenameAndReclassify(view, jobData, result.Errores))
                             {
                                 nombresCorregidos++;
                                 tablasReclasificadas++;
                                 tablaModificada = true;
+                                Log("  [1] OK Nombre corregido");
                             }
                         }
 
@@ -72,22 +93,26 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTROS" && a.IsCorrectable);
                         if (filterAudit != null && filterAudit.Tag is List<ScheduleFilterInfo> filtrosCorrectos)
                         {
+                            Log("  [2] Corrigiendo filtros...");
                             if (WriteFilters(definition, filtrosCorrectos, result.Errores, elementData.Nombre))
                             {
                                 filtrosCorregidos++;
                                 tablaModificada = true;
+                                Log("  [2] OK Filtros corregidos");
                             }
                         }
 
-                        // --- 3. Corregir CONTENIDO (Itemize) ---
+                        // --- 3. Corregir CONTENIDO ---
                         var contentAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "CONTENIDO" && a.IsCorrectable);
                         if (contentAudit != null)
                         {
                             if (!definition.IsItemized)
                             {
+                                Log("  [3] Activando Itemize...");
                                 definition.IsItemized = true;
                                 contenidosCorregidos++;
                                 tablaModificada = true;
+                                Log("  [3] OK Itemize activado");
                             }
                         }
 
@@ -97,9 +122,11 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             if (!definition.IncludeLinkedFiles)
                             {
+                                Log("  [4] Activando Include Links...");
                                 definition.IncludeLinkedFiles = true;
                                 linksIncluidos++;
                                 tablaModificada = true;
+                                Log("  [4] OK Include Links activado");
                             }
                         }
 
@@ -109,72 +136,78 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             if (columnAudit.Tag is Dictionary<ScheduleField, string> headingsToFix)
                             {
+                                Log($"  [5] Renombrando {headingsToFix.Count} encabezados...");
                                 if (WriteHeadings(headingsToFix, result.Errores, elementData.Nombre))
                                 {
                                     columnasRenombradas += headingsToFix.Count;
                                     tablaModificada = true;
+                                    Log($"  [5] OK {headingsToFix.Count} encabezados renombrados");
                                 }
                             }
                             else if (columnAudit.Tag is List<ScheduleField> fieldsToHide)
                             {
+                                Log($"  [5] Ocultando {fieldsToHide.Count} columnas...");
                                 if (HideColumns(fieldsToHide, result.Errores, elementData.Nombre))
                                 {
                                     columnasOcultadas += fieldsToHide.Count;
                                     tablaModificada = true;
+                                    Log($"  [5] OK {fieldsToHide.Count} columnas ocultadas");
                                 }
                             }
                         }
 
-
                         // ==========================================================
-                        // ===== 6. Corregir FORMATO PARCIAL (¡SOLUCIÓN CORREGIDA!)
+                        // ===== 6. Corregir FORMATO PARCIAL (SOLUCIÓN CON TRY-CATCH)
                         // ==========================================================
                         var parcialAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FORMATO PARCIAL" && a.IsCorrectable);
                         if (parcialAudit != null && parcialAudit.Tag is ScheduleFieldId)
                         {
-                            try
-                            {
-                                ScheduleFieldId fieldId = (ScheduleFieldId)parcialAudit.Tag;
-                                ScheduleField field = definition.GetField(fieldId);
+                            ScheduleFieldId fieldId = (ScheduleFieldId)parcialAudit.Tag;
+                            ScheduleField field = definition.GetField(fieldId);
 
-                                if (field != null && field.IsValidObject)
+                            if (field != null && field.IsValidObject)
+                            {
+                                Log($"  [6] Intentando corregir formato PARCIAL (Tipo: {field.FieldType})...");
+
+                                try
                                 {
-                                    // Leer el FormatOptions actual
+                                    // Intentar corregir sin importar el tipo de campo
                                     FormatOptions options = field.GetFormatOptions();
 
-                                    // ========================================
-                                    // ¡CORRECCIÓN APLICADA!
-                                    // Solo modificamos las propiedades de formato,
-                                    // SIN tocar el UnitTypeId (que causaba el error)
-                                    // ========================================
-
+                                    // Modificar solo lo esencial:
+                                    // 1. Desactivar "Use project settings"
                                     options.UseDefault = false;
+
+                                    // 2. Establecer precisión a 2 decimales
                                     options.Accuracy = 0.01;
-                                    options.RoundingMethod = RoundingMethod.Nearest;
-                                    options.SetSymbolTypeId(new ForgeTypeId()); // Sin símbolo de unidad
 
-                                    // ❌ LÍNEA ELIMINADA (era la que causaba el error):
-                                    // options.SetUnitTypeId(UnitTypeId.General);
+                                    // 3. Quitar símbolo de unidad (dejar "None")
+                                    options.SetSymbolTypeId(new ForgeTypeId());
 
-                                    // ✅ NO tocamos el UnitTypeId - el campo conserva su tipo original
+                                    // NO tocar:
+                                    // - SetUnitTypeId() → Conserva las unidades actuales
+                                    // - RoundingMethod → Conserva el método actual
 
-                                    // Aplicar los cambios
+                                    // Aplicar cambios
                                     field.SetFormatOptions(options);
 
+                                    // ✅ Éxito
                                     parcialCorregidos++;
                                     tablaModificada = true;
+                                    Log($"  [6] OK Formato PARCIAL corregido (Tipo: {field.FieldType})");
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                result.Errores.Add($"Error al corregir formato 'PARCIAL' en tabla '{elementData.Nombre}': {ex.Message}");
+                                catch (Exception ex)
+                                {
+                                    // ❌ Este campo específico no acepta corrección
+                                    string errorMsg = $"No se pudo corregir PARCIAL en '{elementData.Nombre}' (Tipo: {field.FieldType}): {ex.Message}";
+                                    result.Errores.Add(errorMsg);
+                                    parcialSaltados++;
+                                    Log($"  [6] SALTADO ({field.FieldType}): {ex.Message}");
+                                }
                             }
                         }
 
-
-                        // ==========================================================
-                        // ===== 7. Corregir PARÁMETRO EMPRESA
-                        // ==========================================================
+                        // --- 7. Corregir PARÁMETRO EMPRESA ---
                         var empresaAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "PARÁMETRO EMPRESA" && a.IsCorrectable);
                         if (empresaAudit != null)
                         {
@@ -184,22 +217,26 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                                 if (param == null && empresaParamElem != null)
                                 {
-                                    result.Errores.Add($"Error en tabla '{elementData.Nombre}': El parámetro 'EMPRESA' no está vinculado. Ejecute el Add-in 'Verificar Parámetro Empresa'.");
+                                    result.Errores.Add($"Error en '{elementData.Nombre}': Parámetro EMPRESA no vinculado.");
+                                    Log("  [7] ERROR: EMPRESA no vinculado");
                                 }
                                 else if (param != null && !param.IsReadOnly)
                                 {
                                     param.Set(EMPRESA_PARAM_VALUE);
                                     empresaCorregidos++;
                                     tablaModificada = true;
+                                    Log("  [7] OK EMPRESA asignado");
                                 }
                                 else if (param == null && empresaParamElem == null)
                                 {
-                                    result.Errores.Add($"Error en tabla '{elementData.Nombre}': No se encontró el Parámetro Compartido 'EMPRESA' en el proyecto.");
+                                    result.Errores.Add($"Error en '{elementData.Nombre}': EMPRESA no existe.");
+                                    Log("  [7] ERROR: EMPRESA no existe");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                result.Errores.Add($"Error al asignar 'EMPRESA' en tabla '{elementData.Nombre}': {ex.Message}");
+                                result.Errores.Add($"Error EMPRESA en '{elementData.Nombre}': {ex.Message}");
+                                Log($"  [7] ERROR: {ex.Message}");
                             }
                         }
 
@@ -207,66 +244,65 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             tablasCorregidas++;
                         }
-                    } // Fin del foreach
+                    }
 
-
-                    // ==========================================================
-                    // ===== 8. Lógica de Éxito
-                    // ==========================================================
                     if (result.Errores.Count == 0)
                     {
                         result.Exitoso = true;
                     }
 
                     trans.Commit();
+                    Log("\n=== TRANSACCIÓN COMPLETADA ===");
                 }
                 catch (Exception ex)
                 {
                     trans.RollBack();
                     result.Exitoso = false;
-                    result.Mensaje = $"Error fatal en la transacción: {ex.Message}";
+                    result.Mensaje = $"Error fatal: {ex.Message}";
                     result.Errores.Add(ex.Message);
+                    Log($"\n=== TRANSACCIÓN REVERTIDA ===");
+                    Log($"ERROR: {ex.Message}");
                 }
-            } // Fin del using Transaction
+            }
 
-
-            // ==========================================================
-            // ===== 9. Lógica de Mensaje Final
-            // ==========================================================
             if (result.Exitoso)
             {
                 result.Mensaje = $"Corrección completa.\n\n" +
-                                 $"Tablas únicas modificadas: {tablasCorregidas}\n\n" +
+                                 $"Tablas modificadas: {tablasCorregidas}\n" +
+                                 $"Formatos PARCIAL corregidos: {parcialCorregidos}\n" +
+                                 $"Formatos PARCIAL saltados: {parcialSaltados}\n\n" +
                                  $"Detalles:\n" +
-                                 $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
-                                 $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
-                                 $"- Parámetros 'EMPRESA' corregidos: {empresaCorregidos}\n" +
-                                 $"- Filtros corregidos: {filtrosCorregidos}\n" +
-                                 $"- Formatos 'PARCIAL' corregidos: {parcialCorregidos}\n" +
-                                 $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
-                                 $"- 'Include Links' activados: {linksIncluidos}\n" +
-                                 $"- Encabezados renombrados: {columnasRenombradas}\n" +
-                                 $"- Columnas ocultadas: {columnasOcultadas}";
+                                 $"- Nombres: {nombresCorregidos}\n" +
+                                 $"- Reclasificadas: {tablasReclasificadas}\n" +
+                                 $"- EMPRESA: {empresaCorregidos}\n" +
+                                 $"- Filtros: {filtrosCorregidos}\n" +
+                                 $"- Itemize: {contenidosCorregidos}\n" +
+                                 $"- Links: {linksIncluidos}\n" +
+                                 $"- Encabezados: {columnasRenombradas}\n" +
+                                 $"- Columnas ocultas: {columnasOcultadas}\n\n" +
+                                 $"Log: {_logPath}";
+
+                Log($"\n=== RESUMEN ===");
+                Log($"Tablas modificadas: {tablasCorregidas}");
+                Log($"PARCIAL corregidos: {parcialCorregidos}");
+                Log($"PARCIAL saltados: {parcialSaltados}");
             }
             else
             {
                 if (result.Errores.Count > 0)
                 {
-                    result.Mensaje = $"Se encontraron {result.Errores.Count} errores durante la corrección (la transacción fue revertida):\n\n" +
-                                     string.Join("\n", result.Errores.Take(5));
+                    result.Mensaje = $"Errores: {result.Errores.Count} (transacción revertida)\n\n" +
+                                     string.Join("\n", result.Errores.Take(5)) +
+                                     $"\n\nLog: {_logPath}";
                 }
-                else if (string.IsNullOrEmpty(result.Mensaje))
-                {
-                    result.Mensaje = "La corrección se ejecutó pero no se detectaron errores. La transacción fue revertida.";
-                }
+
+                Log($"\n=== FALLIDO ===");
+                Log($"Errores: {result.Errores.Count}");
             }
 
             return result;
         }
 
-        /// <summary>
-        /// Renombra la tabla y asigna GRUPO DE VISTA, SUBGRUPO DE VISTA y SUBPARTIDA
-        /// </summary>
         private bool RenameAndReclassify(ViewSchedule view, RenamingJobData jobData, List<string> errores)
         {
             try
@@ -288,7 +324,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     paramSubGrupo.Set(jobData.NuevoSubGrupoVista);
                 }
 
-                // Asignar el parámetro SUBPARTIDA
                 Parameter paramSubPartida = view.LookupParameter("SUBGRUPO DE VISTA_SUBPARTIDA");
                 if (paramSubPartida != null && !paramSubPartida.IsReadOnly && jobData.NuevoSubGrupoVistaSubpartida != null)
                 {
@@ -299,7 +334,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error al reclasificar tabla '{view.Name}': {ex.Message}");
+                errores.Add($"Error al reclasificar '{view.Name}': {ex.Message}");
                 return false;
             }
         }
@@ -323,7 +358,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error al escribir encabezados en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error encabezados en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -343,7 +378,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error al ocultar columnas en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error ocultar columnas en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -356,10 +391,8 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 foreach (var filtroInfo in filtrosCorrectos)
                 {
                     ScheduleField field = FindField(definition, filtroInfo.FieldName);
-                    if (field == null)
-                    {
-                        continue;
-                    }
+                    if (field == null) continue;
+
                     ScheduleFilter newFilter = CreateScheduleFilter(field.FieldId, filtroInfo, errores, nombreTabla);
                     if (newFilter != null)
                     {
@@ -370,7 +403,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error al escribir filtros en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error filtros en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -381,9 +414,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 filtroInfo.FilterType != ScheduleFilterType.HasValue &&
                 filtroInfo.FilterType != ScheduleFilterType.HasNoValue)
             {
-                errores.Add($"Valor de filtro nulo no compatible para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
+                errores.Add($"Filtro nulo en '{filtroInfo.FieldName}' - '{nombreTabla}'.");
                 return null;
             }
+
             switch (filtroInfo.Value)
             {
                 case string s:
@@ -397,7 +431,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 case null:
                     return new ScheduleFilter(fieldId, filtroInfo.FilterType);
                 default:
-                    errores.Add($"Valor de filtro no compatible ({filtroInfo.Value.GetType()}) para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
+                    errores.Add($"Tipo filtro inválido ({filtroInfo.Value.GetType()}) - '{filtroInfo.FieldName}' en '{nombreTabla}'.");
                     return null;
             }
         }
