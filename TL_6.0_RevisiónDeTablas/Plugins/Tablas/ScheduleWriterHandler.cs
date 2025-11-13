@@ -4,13 +4,10 @@ using System.Collections.Generic;
 using System.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using TL60_RevisionDeTablas.Models; // <--- (¡CORRECCIÓN!) Añadido
+using TL60_RevisionDeTablas.Models;
 
-namespace TL60_RevisionDeTablas.Plugins.Tablas // <--- (¡CORRECCIÓN!) Namespace actualizado
+namespace TL60_RevisionDeTablas.Plugins.Tablas
 {
-    /// <summary>
-    /// Maneja la escritura de correcciones usando ExternalEvent
-    /// </summary>
     public class ScheduleUpdateHandler : IExternalEventHandler
     {
         private Document _doc;
@@ -26,18 +23,22 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas // <--- (¡CORRECCIÓN!) Namespac
             ManualResetEvent resetEvent)
         {
             _doc = doc;
-            _elementosData = elementosData;
+            _elementosData = elementosData; // <-- Recibe la lista COMPLETA
             _resetEvent = resetEvent;
             _result = null;
         }
 
+        // ==========================================================
+        // ===== MÉTODO MODIFICADO
+        // ==========================================================
         public void Execute(UIApplication app)
         {
             try
             {
-                // (Ahora 'ScheduleUpdateWriter' está en el mismo namespace)
-                var writer = new ScheduleUpdateWriter(_doc); // <--- (Línea 39)
-                _result = writer.UpdateSchedules(_elementosData);
+                var writer = new ScheduleUpdateWriter(_doc);
+
+                // Llama al nuevo método orquestador que hace AMBAS tareas
+                _result = writer.UpdateAll(_elementosData);
             }
             catch (Exception ex)
             {
@@ -76,6 +77,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas // <--- (¡CORRECCIÓN!) Namespac
 
         /// <summary>
         /// Escribe correcciones de forma asíncrona
+        /// (Este método no necesita cambios, ya pasa la lista completa)
         /// </summary>
         public ProcessingResult UpdateSchedulesAsync(
             Document doc,
@@ -86,7 +88,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas // <--- (¡CORRECCIÓN!) Namespac
                 _handler.SetData(doc, elementosData, resetEvent);
                 _externalEvent.Raise();
 
-                // Timeout extendido a 600 segundos
                 bool completed = resetEvent.WaitOne(TimeSpan.FromSeconds(600));
 
                 if (!completed)

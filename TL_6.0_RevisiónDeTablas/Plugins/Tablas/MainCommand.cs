@@ -19,15 +19,13 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
     public class MainCommand : IExternalCommand
     {
         private const string SPREADSHEET_ID = "14bYBONt68lfM-sx6iIJxkYExXS0u7sdgijEScL3Ed3Y";
-        // (¡NUEVO!) Nombre de la hoja para la whitelist de modelos
         private const string HOJA_MODELOS_ESP = "MODELOS POR ESPECIALIDAD";
 
-        // (¡NUEVO!) Lista de WIP expandida, basada en TL_5.0
         private static readonly List<string> NOMBRES_WIP = new List<string>
         {
             "TL", "TITO", "PDONTADENEA", "ANDREA", "EFRAIN",
             "PROYECTOSBIM", "ASISTENTEBIM", "LUIS", "DIEGO", "JORGE", "MIGUEL",
-            "AUDIT" // "LOOKAHEAD", "CARS", etc. se manejan por nombre de plano
+            "AUDIT"
         };
 
         private static readonly Regex _acRegex = new Regex(@"^C\.(\d{2,3}\.)+\d{2,3}");
@@ -69,7 +67,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 var uniclassService = new UniclassDataService(sheetsService, docTitle);
                 uniclassService.LoadClassificationData(SPREADSHEET_ID);
 
-                // (¡NUEVO!) Obtener la "lista blanca" de modelos a escanear
                 HashSet<string> modelWhitelist = GetModelWhitelistFromSheets(sheetsService, docTitle);
 
                 var processor = new ScheduleProcessor(doc, sheetsService, uniclassService, SPREADSHEET_ID, mainSpecialty);
@@ -78,16 +75,15 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 var existingMetradoCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 HashSet<string> codigosEncontradosEnModelos = new HashSet<string>();
 
+                // Auditar Unidades Globales
+                List<ElementData> unidadesGlobales = processor.AuditProjectUnits();
 
-                // ==========================================================
-                // ===== 2. PROCESAR TABLAS DE PLANIFICACIÓN (ÁRBOL DE DECISIÓN)
-                // ==========================================================
-
+                // 2. PROCESAR TABLAS DE PLANIFICACIÓN
                 var allSchedules = new FilteredElementCollector(doc)
                     .OfCategory(BuiltInCategory.OST_Schedules)
                     .WhereElementIsNotElementType()
-                    .Cast<ViewSchedule>() // <-- (¡CORRECCIÓN!) Cast primero
-                    .Where(v => v.IsTemplate == false); // <-- (¡CORRECCIÓN!) Filtrar plantillas
+                    .Cast<ViewSchedule>()
+                    .Where(v => v.IsTemplate == false);
 
                 foreach (ViewSchedule view in allSchedules)
                 {
@@ -98,18 +94,16 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     string grupoVista = GetParamValue(view, "GRUPO DE VISTA");
                     string subGrupoVista = GetParamValue(view, "SUBGRUPO DE VISTA");
 
-                    // (¡NUEVO!) Ignorar tablas ya corregidas
                     if (viewNameUpper.StartsWith("SOPORTE."))
                     {
                         continue;
                     }
 
                     // ==========================================================
-                    // ===== INICIO: RAMA SUPERIOR (tabla.Name empieza con "C.")
+                    // RAMA 1: TABLAS DE METRADO (Empiezan con "C.")
                     // ==========================================================
                     if (viewNameUpper.StartsWith("C."))
                     {
-                        // --- PREGUNTA 2: ¿ES COPIA? ---
                         if (viewNameUpper.Contains("COPY") || viewNameUpper.Contains("COPIA"))
                         {
                             if (grupoVista.Equals("REVISAR", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(subGrupoVista)) continue;
@@ -119,7 +113,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             continue;
                         }
 
-                        // --- PREGUNTA 3: ¿ES WIP? ---
                         if (NOMBRES_WIP.Any(name => viewNameUpper.Contains(name)))
                         {
                             if (grupoVista.Equals("00 TRABAJO EN PROCESO - WIP", StringComparison.OrdinalIgnoreCase)) continue;
@@ -132,7 +125,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         Match acMatch = _acRegex.Match(viewName);
                         string assemblyCode = acMatch.Success ? acMatch.Value : "INVALID_AC";
 
-                        // --- PREGUNTA 4: ¿ES MANUAL? ---
                         string scheduleType = uniclassService.GetScheduleType(assemblyCode);
                         if (scheduleType.Equals("MANUAL", StringComparison.OrdinalIgnoreCase))
                         {
@@ -145,10 +137,8 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             continue;
                         }
 
-                        // --- PREGUNTA 5: ¿ES TABLA DE METRADO? ---
                         if (grupoVista.StartsWith("C.", StringComparison.OrdinalIgnoreCase))
                         {
-                            // Esta es una tabla de metrado, añadirla a la lista
                             if (assemblyCode != "INVALID_AC")
                             {
                                 existingMetradoCodes.Add(assemblyCode);
@@ -158,7 +148,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                             elementosData.Add(processor.ProcessSingleElement(view, assemblyCode));
                         }
-                        // --- ES TABLA DE SOPORTE ---
                         else
                         {
                             elementosData.Add(CreateReclassificationAudit(view,
@@ -167,13 +156,13 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         }
                     }
                     // ==========================================================
-                    // ===== INICIO: RAMA INFERIOR (tabla.Name NO empieza con "C.")
+                    // RAMA 2: OTRAS TABLAS (No empiezan con "C.")
                     // ==========================================================
                     else
                     {
                         var planos = GetPlanosDondeEstaLaTabla(doc, view);
 
-                        // --- PREGUNTA 6: ¿ESTÁ EN PLANO? ---
+                        // --- CASO 2A: TABLA ESTÁ "EN PLANO" ---
                         if (planos.Count > 0)
                         {
                             ViewSheet primerPlano = planos[0];
@@ -204,48 +193,80 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                                 elementosData.Add(CreateReclassificationAudit(view, "WIP (SOPORTE)", "Tabla en plano de Soporte Campo.", null, "00 TRABAJO EN PROCESO - WIP", "SOPORTE BIM", "SOPORTE CAMPO"));
                             }
                         }
-                        // --- NO ESTÁ EN PLANO ---
+                        // ==========================================================
+                        // --- CASO 2B: TABLA "NO PLANO" (LÓGICA ACTUALIZADA) ---
+                        // ==========================================================
                         else
                         {
-                            // --- PREGUNTA 7: ¿ES CCECC? ---
+                            // 1. ¿ES CCECC? -> IGNORAR
                             if (grupoVista.Equals("AUDITORIA CCECC", StringComparison.OrdinalIgnoreCase))
                             {
                                 // IGNORAR (No hacer nada)
                             }
-                            // --- PREGUNTA 8: ¿ES AUDIT? ---
+                            // 2. ¿ES AUDIT? -> CLASIFICAR
                             else if (viewNameUpper.Contains("AUDIT"))
                             {
                                 elementosData.Add(CreateReclassificationAudit(view, "WIP (SOPORTE)", "Tabla de Auditoría.", null, "00 TRABAJO EN PROCESO - WIP", "SOPORTE BIM", "AUDITORÍA"));
                             }
-                            // --- PREGUNTA 9: ¿ES COBIE? ---
+                            // 3. ¿ES LOOK? -> CLASIFICAR
+                            else if (viewNameUpper.Contains("LOOK"))
+                            {
+                                elementosData.Add(CreateReclassificationAudit(view, "WIP (AVANCE)", "Tabla de Lookahead (No en plano).", null, "00 TRABAJO EN PROCESO - WIP", "AVANCE SEMANAL", "LOOKAHEAD"));
+                            }
+                            // 4. ¿ES AVANCE? -> CLASIFICAR
+                            else if (viewNameUpper.Contains("AVANCE"))
+                            {
+                                elementosData.Add(CreateReclassificationAudit(view, "WIP (AVANCE)", "Tabla de Avance (No en plano).", null, "00 TRABAJO EN PROCESO - WIP", "AVANCE SEMANAL", "CARS"));
+                            }
+                            // 5. ¿ES SECTORIZACI? -> CLASIFICAR
+                            else if (viewNameUpper.Contains("SECTORIZACI"))
+                            {
+                                elementosData.Add(CreateReclassificationAudit(view, "WIP (AVANCE)", "Tabla de Sectorización (No en plano).", null, "00 TRABAJO EN PROCESO - WIP", "AVANCE SEMANAL", "SECTORIZACIÓN"));
+                            }
+                            // 6. ¿ES VALORIZACI? -> CLASIFICAR
+                            else if (viewNameUpper.Contains("VALORIZACI"))
+                            {
+                                elementosData.Add(CreateReclassificationAudit(view, "WIP (SOPORTE)", "Tabla de Valorización (No en plano).", null, "00 TRABAJO EN PROCESO - WIP", "SOPORTE BIM", "VALORIZACIÓN"));
+                            }
+                            // 7. ¿ES COBIE? -> CLASIFICAR
                             else if (viewNameUpper.StartsWith("COBIE"))
                             {
                                 elementosData.Add(CreateReclassificationAudit(view, "WIP (SOPORTE)", "Tabla COBie.", null, "00 TRABAJO EN PROCESO - WIP", "SOPORTE BIM", "COBIE"));
                             }
-                            // --- PREGUNTA 10: RESTO ---
+                            // 8. RESTO DE LAS TABLAS (CON REGLA DE PROTECCIÓN)
                             else
                             {
-                                elementosData.Add(CreateReclassificationAudit(view, "CLASIFICACIÓN (REVISAR)", "Tabla no clasificada.", null, "REVISAR", null, null));
+                                // Obtener el grupo de vista actual
+                                string grupoActual = GetParamValue(view, "GRUPO DE VISTA");
+
+                                // Aplicar la nueva regla de protección:
+                                // Si ya está agrupada en una categoría principal, ignorarla.
+                                if (grupoActual.Equals("00 TRABAJO EN PROCESO - WIP", StringComparison.OrdinalIgnoreCase) ||
+                                    grupoActual.Equals("00 DISEÑO", StringComparison.OrdinalIgnoreCase) ||
+                                    grupoActual.Equals("AUDITORIA CCECC", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // IGNORAR. Ya está clasificada, no hacer nada.
+                                }
+                                else
+                                {
+                                    // No está protegida, marcarla para REVISAR.
+                                    elementosData.Add(CreateReclassificationAudit(view, "CLASIFICACIÓN (REVISAR)", "Tabla no clasificada.", null, "REVISAR", null, null));
+                                }
                             }
                         }
                     }
                 } // Fin del foreach
 
-                // ==========================================================
-                // ===== 4. EJECUTAR AUDITORÍA DE ELEMENTOS (Tablas Faltantes)
-                // ==========================================================
-                // (¡CORREGIDO!) Se ejecuta DESPUÉS de poblar 'existingMetradoCodes'
-                // ==========================================================
-
+                // 4. AUDITORÍA DE ELEMENTOS (Tablas Faltantes)
                 if (_categoriesToAudit.Count > 0)
                 {
                     var elementAuditor = new MissingScheduleAuditor(doc, uniclassService);
 
                     ElementData missingSchedulesReport = elementAuditor.FindMissingSchedules(
-                        existingMetradoCodes, // <-- (¡CORREGIDO!) Ahora pasa la lista LLENA
+                        existingMetradoCodes,
                         _categoriesToAudit,
-                        modelWhitelist, // <-- (¡NUEVO!) Pasa la lista blanca
-                        out codigosEncontradosEnModelos); // <-- Obtiene los códigos
+                        modelWhitelist,
+                        out codigosEncontradosEnModelos);
 
                     if (missingSchedulesReport != null)
                     {
@@ -266,35 +287,28 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                             {
                                 AuditType = "CONFIGURACIÓN",
                                 Estado = EstadoParametro.Vacio,
-                                Mensaje = "La auditoría de elementos modelados (Tablas Faltantes) no está configurada. " +
-                                          "Se debe definir la lista de categorías a revisar en MainCommand.cs."
+                                Mensaje = "La auditoría de elementos modelados (Tablas Faltantes) no está configurada."
                             }
                         }
                     });
                 }
 
-                // ==========================================================
-                // ===== 5. (NUEVO) Auditoría de Tablas Metrado "Modo EM"
-                // ==========================================================
+                // 5. Auditoría de Tablas Metrado "Modo EM"
                 if (isModeEM)
                 {
-                    // Volver a iterar, pero esta vez solo para las tablas de metrado EM
                     foreach (ViewSchedule view in allSchedules)
                     {
-                        // Buscar solo las tablas de metrado C./C.
                         if (!view.Name.StartsWith("C.") || !(GetParamValue(view, "GRUPO DE VISTA").StartsWith("C.")))
                             continue;
 
                         Match acMatch = _acRegex.Match(view.Name);
                         string assemblyCode = acMatch.Success ? acMatch.Value : "INVALID_AC";
 
-                        // Si el AC de esta tabla NO fue encontrado en el escaneo, ignorarla.
                         if (!codigosEncontradosEnModelos.Contains(assemblyCode))
                         {
                             continue;
                         }
 
-                        // Si SÍ fue encontrado, auditarla
                         elementosData.Add(processor.ProcessSingleElement(view, assemblyCode));
                     }
                 }
@@ -304,7 +318,12 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                 // 7. Construir datos de diagnóstico
                 var diagnosticBuilder = new DiagnosticDataBuilder();
-                List<DiagnosticRow> diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
+
+                var todosElementos = new List<ElementData>();
+                todosElementos.AddRange(unidadesGlobales);    // PRIMERO unidades
+                todosElementos.AddRange(elementosData);       // DESPUÉS tablas
+
+                var diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(todosElementos);
 
                 // 8. Preparar los Writers Asíncronos
                 var writerAsync = new ScheduleUpdateAsync();
@@ -313,7 +332,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 // 9. Crear y mostrar ventana Modeless
                 var mainWindow = new MainWindow(
                     diagnosticRows,
-                    elementosData,
+                    todosElementos,  // Pasar la lista completa
                     doc,
                     writerAsync,
                     viewActivator
@@ -331,7 +350,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
         }
 
         /// <summary>
-        /// (¡NUEVO!) Helper para crear auditorías de reclasificación directamente
+        /// Helper para crear auditorías de reclasificación
         /// </summary>
         private ElementData CreateReclassificationAudit(
             ViewSchedule view, string auditType, string mensaje,
@@ -342,7 +361,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 ElementId = view.Id,
                 Element = view,
                 Nombre = view.Name,
-                Categoria = view.Category?.Name ?? "Tabla de Planificación",
+                Categoria = "TABLAS", // Asignado a "TABLAS"
                 CodigoIdentificacion = "N/A"
             };
 
@@ -364,10 +383,16 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             bool sgvCorrecto = (nuevoSubGrupo == null) || (sgv == nuevoSubGrupo);
             bool ssvpCorrecto = (nuevoSubPartida == null) || (ssvp == nuevoSubPartida);
 
+            // Si todo ya está correcto, no crear auditoría
             if (nombreCorrecto && gvCorrecto && sgvCorrecto && ssvpCorrecto)
             {
+                // No añadir a la lista. Devolver null para indicar que no hay nada que hacer.
+                // Devolver un ElementData vacío pero "completo" podría llenar la UI
+                // con filas "Correctas" innecesarias.
+                // ... Reconsiderando: La lógica original devolvía un ElementData.
+                // Lo mantendré, pero sin auditorías.
                 elementData.DatosCompletos = true;
-                return elementData;
+                return elementData; // Devuelve un elemento sin auditorías (no aparecerá en la UI)
             }
 
             elementData.DatosCompletos = false;
@@ -431,7 +456,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
         }
 
-        #region Helpers de Clasificación (TL_5.0)
+        #region Helpers de Clasificación
 
         private string GetParamValue(Element elemento, string nombre_param)
         {
@@ -493,9 +518,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             return "UNKNOWN_SPECIALTY";
         }
 
-        /// <summary>
-        /// (¡NUEVO!) Lee la hoja "MODELOS POR ESPECIALIDAD"
-        /// </summary>
         private HashSet<string> GetModelWhitelistFromSheets(GoogleSheetsService sheetsService, string docTitle)
         {
             var whitelist = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -505,7 +527,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 var data = sheetsService.ReadData(SPREADSHEET_ID, $"'{HOJA_MODELOS_ESP}'!B:B");
                 if (data == null || data.Count == 0)
                 {
-                    // Fallback: Si no se puede leer la hoja, la whitelist solo contiene el anfitrión
                     whitelist.Add(docTitle);
                     return whitelist;
                 }
@@ -529,7 +550,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                     if (hostFoundInCell)
                     {
-                        // Encontramos la celda correcta. Leer todos los modelos.
                         foreach (string modelName in modelsInCell)
                         {
                             string trimmedName = Path.GetFileNameWithoutExtension(modelName.Trim());
@@ -538,7 +558,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                                 whitelist.Add(trimmedName);
                             }
                         }
-                        return whitelist; // Devolver la lista encontrada
+                        return whitelist;
                     }
                 }
             }
@@ -547,8 +567,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 TaskDialog.Show("Error Google Sheets", $"No se pudo leer la hoja '{HOJA_MODELOS_ESP}': {ex.Message}");
             }
 
-            // Si no se encontró el anfitrión en la hoja, devolver una lista
-            // que solo contiene al anfitrión (para Modo Normal)
             whitelist.Add(docTitle);
             return whitelist;
         }

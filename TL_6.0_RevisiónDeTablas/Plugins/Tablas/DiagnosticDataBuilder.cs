@@ -7,7 +7,6 @@ using MediaColor = System.Windows.Media.Color;
 using MediaBrush = System.Windows.Media.SolidColorBrush;
 using TL60_RevisionDeTablas.Models;
 
-// (¡ESTA ES LA LÍNEA CORREGIDA!)
 namespace TL60_RevisionDeTablas.Plugins.Tablas
 {
     public class DiagnosticDataBuilder
@@ -18,19 +17,21 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
             foreach (var elementData in elementosData)
             {
-                // (¡AÑADIDO!) Si el ElementId es inválido (como nuestro informe de "Tablas Faltantes"), 
-                // no debe ser seleccionable.
                 bool esSeleccionable = (elementData.ElementId != null && elementData.ElementId != ElementId.InvalidElementId);
                 string idMostrar = esSeleccionable ? elementData.ElementId.IntegerValue.ToString() : "N/A";
 
-                // Procesar cada resultado de auditoría
                 foreach (var auditResult in elementData.AuditResults)
                 {
                     var row = new DiagnosticRow
                     {
                         ElementId = elementData.ElementId,
                         IdMostrar = idMostrar,
-                        Grupo = elementData.Categoria,
+
+                        // Esta línea se queda. Es inofensiva y parte de la lógica nueva.
+                        // Simplemente no se usará para agrupar en la UI.
+                        Grupo = elementData.Categoria == "UNIDADES GLOBALES" ?
+                                "UNIDADES GLOBALES" : "TABLAS",
+
                         CodigoIdentificacion = elementData.CodigoIdentificacion,
                         Descripcion = elementData.Nombre,
                         NombreParametro = auditResult.AuditType,
@@ -38,24 +39,24 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         ValorCorregido = auditResult.ValorCorregido,
                         Estado = auditResult.Estado,
                         Mensaje = auditResult.Mensaje,
-                        EsSeleccionable = esSeleccionable // <-- Usar la variable
+                        EsSeleccionable = esSeleccionable
                     };
 
                     rows.Add(row);
                 }
             }
 
-            // Ordenar filas
             rows = rows.OrderBy(r => GetEstadoOrder(r.Estado))
                       .ThenBy(r => r.ElementId?.IntegerValue ?? 0)
                       .ToList();
 
-            // Asignar números de fila
             for (int i = 0; i < rows.Count; i++)
             {
                 rows[i].NumeroFila = i + 1;
             }
 
+            // Esta función (la causa del conflicto con la agrupación)
+            // ahora funcionará bien de nuevo.
             ApplyAlternatingColorsByID(rows);
 
             return rows;

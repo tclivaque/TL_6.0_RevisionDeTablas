@@ -1,4 +1,5 @@
-﻿using System.Windows.Media;
+﻿// Models/DiagnosticRow.cs
+using System.Windows.Media;
 using Autodesk.Revit.DB;
 
 namespace TL60_RevisionDeTablas.Models
@@ -12,7 +13,12 @@ namespace TL60_RevisionDeTablas.Models
         public bool EsSeleccionable { get; set; }
         public ElementId ElementId { get; set; }
         public string IdMostrar { get; set; }
+
+        /// <summary>
+        /// Grupo para agrupar filas: "UNIDADES GLOBALES" o "TABLAS"
+        /// </summary>
         public string Grupo { get; set; }
+
         public string CodigoIdentificacion { get; set; }
         public string Descripcion { get; set; }
         public string NombreParametro { get; set; }

@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.IO;
+using System.Text;
 using TL60_RevisionDeTablas.Models;
 using Autodesk.Revit.UI;
 
@@ -14,29 +14,77 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
         private readonly Document _doc;
         private const string EMPRESA_PARAM_NAME = "EMPRESA";
         private const string EMPRESA_PARAM_VALUE = "RNG";
-        private static string _logPath;
+
+        private void Log(string message)
+        {
+            System.Diagnostics.Debug.WriteLine(message);
+        }
 
         public ScheduleUpdateWriter(Document doc)
         {
             _doc = doc;
-            // Crear archivo de log en el escritorio
-            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            _logPath = Path.Combine(desktop, $"TL60_CorreccionTablas_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
-
-            // Escribir encabezado
-            File.WriteAllText(_logPath, $"=== LOG DE CORRECCIÓN DE TABLAS ===\n");
-            File.AppendAllText(_logPath, $"Fecha: {DateTime.Now}\n");
-            File.AppendAllText(_logPath, $"Documento: {doc.Title}\n\n");
         }
 
-        private void Log(string message)
+        // --- MÉTODO ORQUESTADOR ---
+        public ProcessingResult UpdateAll(List<ElementData> todosLosElementos)
         {
-            File.AppendAllText(_logPath, $"[{DateTime.Now:HH:mm:ss}] {message}\n");
+            var finalResult = new ProcessingResult { Exitoso = true };
+            var resultMessage = new StringBuilder();
+            var allErrors = new List<string>();
+
+            // 1. Separar las listas
+            var unidadesGlobales = todosLosElementos
+                .Where(ed => ed.Categoria == "UNIDADES GLOBALES")
+                .ToList();
+            var tablasData = todosLosElementos
+                .Where(ed => ed.Categoria != "UNIDADES GLOBALES")
+                .ToList();
+
+            // 2. Corregir Unidades Globales (Primera Transacción)
+            if (unidadesGlobales.Any(u => u.AuditResults.Any(a => a.IsCorrectable)))
+            {
+                ProcessingResult resultUnits = this.UpdateProjectUnits(unidadesGlobales);
+                resultMessage.AppendLine(resultUnits.Mensaje);
+                if (!resultUnits.Exitoso)
+                {
+                    finalResult.Exitoso = false;
+                    allErrors.AddRange(resultUnits.Errores);
+                }
+            }
+
+            // 3. Corregir Tablas (Segunda Transacción)
+            if (tablasData.Any(t => t.AuditResults.Any(a => a.IsCorrectable)))
+            {
+                if (resultMessage.Length > 0) resultMessage.AppendLine();
+
+                ProcessingResult resultTables = this.UpdateSchedules(tablasData);
+                resultMessage.AppendLine(resultTables.Mensaje);
+                if (!resultTables.Exitoso)
+                {
+                    finalResult.Exitoso = false;
+                    allErrors.AddRange(resultTables.Errores);
+                }
+            }
+
+            // 4. Combinar resultados
+            finalResult.Mensaje = resultMessage.ToString();
+            finalResult.Errores = allErrors;
+
+            if (string.IsNullOrWhiteSpace(finalResult.Mensaje))
+            {
+                finalResult.Mensaje = "No se encontraron elementos que requieran corrección.";
+                finalResult.Exitoso = true;
+            }
+
+            return finalResult;
         }
 
+
+        // --- MÉTODO DE CORRECCIÓN DE TABLAS (COMPLETO) ---
         public ProcessingResult UpdateSchedules(List<ElementData> elementosData)
         {
             var result = new ProcessingResult { Exitoso = false };
+
             int tablasCorregidas = 0;
             int filtrosCorregidos = 0;
             int contenidosCorregidos = 0;
@@ -48,8 +96,6 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             int parcialCorregidos = 0;
             int parcialSaltados = 0;
             int empresaCorregidos = 0;
-
-            Log("=== INICIO DE CORRECCIÓN ===\n");
 
             ParameterElement empresaParamElem = new FilteredElementCollector(_doc)
                 .OfClass(typeof(ParameterElement))
@@ -64,6 +110,9 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                     foreach (var elementData in elementosData)
                     {
+                        if (elementData.Categoria == "UNIDADES GLOBALES")
+                            continue;
+
                         if (elementData.ElementId == null || elementData.ElementId == ElementId.InvalidElementId)
                             continue;
 
@@ -73,19 +122,28 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         ScheduleDefinition definition = view.Definition;
                         bool tablaModificada = false;
 
-                        Log($"\n--- Procesando tabla: {elementData.Nombre} (ID: {elementData.ElementId.IntegerValue}) ---");
+                        // ==========================================================
+                        // ===== 1. CORRECCIÓN DE RECLASIFICACIÓN (LÓGICA MEJORADA)
+                        // ==========================================================
+                        // Busca CUALQUIER auditoría que sea corregible y 
+                        // contenga RenamingJobData en su Tag.
+                        var reclassAudit = elementData.AuditResults.FirstOrDefault(a => a.IsCorrectable && a.Tag is RenamingJobData);
 
-                        // --- 1. Corregir NOMBRE ---
-                        var nameAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "VIEW NAME" && a.IsCorrectable);
-                        if (nameAudit != null && nameAudit.Tag is RenamingJobData jobData)
+                        if (reclassAudit != null)
                         {
-                            Log("  [1] Corrigiendo nombre...");
+                            // Se encontró una auditoría de reclasificación
+                            // (puede ser "VIEW NAME", "ACER MANUAL", "COBie.Room", etc.)
+                            RenamingJobData jobData = (RenamingJobData)reclassAudit.Tag;
+
                             if (RenameAndReclassify(view, jobData, result.Errores))
                             {
-                                nombresCorregidos++;
-                                tablasReclasificadas++;
+                                // Contar si el trabajo incluía un nuevo nombre
+                                if (jobData.NuevoNombre != null && view.Name != jobData.NuevoNombre)
+                                {
+                                    nombresCorregidos++;
+                                }
+                                tablasReclasificadas++; // Contar esto como una reclasificación
                                 tablaModificada = true;
-                                Log("  [1] OK Nombre corregido");
                             }
                         }
 
@@ -93,26 +151,22 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTROS" && a.IsCorrectable);
                         if (filterAudit != null && filterAudit.Tag is List<ScheduleFilterInfo> filtrosCorrectos)
                         {
-                            Log("  [2] Corrigiendo filtros...");
                             if (WriteFilters(definition, filtrosCorrectos, result.Errores, elementData.Nombre))
                             {
                                 filtrosCorregidos++;
                                 tablaModificada = true;
-                                Log("  [2] OK Filtros corregidos");
                             }
                         }
 
-                        // --- 3. Corregir CONTENIDO ---
+                        // --- 3. Corregir CONTENIDO (Itemize) ---
                         var contentAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "CONTENIDO" && a.IsCorrectable);
                         if (contentAudit != null)
                         {
                             if (!definition.IsItemized)
                             {
-                                Log("  [3] Activando Itemize...");
                                 definition.IsItemized = true;
                                 contenidosCorregidos++;
                                 tablaModificada = true;
-                                Log("  [3] OK Itemize activado");
                             }
                         }
 
@@ -122,11 +176,9 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             if (!definition.IncludeLinkedFiles)
                             {
-                                Log("  [4] Activando Include Links...");
                                 definition.IncludeLinkedFiles = true;
                                 linksIncluidos++;
                                 tablaModificada = true;
-                                Log("  [4] OK Include Links activado");
                             }
                         }
 
@@ -136,74 +188,50 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         {
                             if (columnAudit.Tag is Dictionary<ScheduleField, string> headingsToFix)
                             {
-                                Log($"  [5] Renombrando {headingsToFix.Count} encabezados...");
                                 if (WriteHeadings(headingsToFix, result.Errores, elementData.Nombre))
                                 {
                                     columnasRenombradas += headingsToFix.Count;
                                     tablaModificada = true;
-                                    Log($"  [5] OK {headingsToFix.Count} encabezados renombrados");
                                 }
                             }
                             else if (columnAudit.Tag is List<ScheduleField> fieldsToHide)
                             {
-                                Log($"  [5] Ocultando {fieldsToHide.Count} columnas...");
                                 if (HideColumns(fieldsToHide, result.Errores, elementData.Nombre))
                                 {
                                     columnasOcultadas += fieldsToHide.Count;
                                     tablaModificada = true;
-                                    Log($"  [5] OK {fieldsToHide.Count} columnas ocultadas");
                                 }
                             }
                         }
 
-                        // ==========================================================
-                        // ===== 6. Corregir FORMATO PARCIAL (SOLUCIÓN CON TRY-CATCH)
-                        // ==========================================================
+                        // --- 6. Corregir FORMATO PARCIAL (Lógica simple) ---
                         var parcialAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FORMATO PARCIAL" && a.IsCorrectable);
                         if (parcialAudit != null && parcialAudit.Tag is ScheduleFieldId)
                         {
-                            ScheduleFieldId fieldId = (ScheduleFieldId)parcialAudit.Tag;
-                            ScheduleField field = definition.GetField(fieldId);
-
-                            if (field != null && field.IsValidObject)
+                            try
                             {
-                                Log($"  [6] Intentando corregir formato PARCIAL (Tipo: {field.FieldType})...");
+                                ScheduleFieldId fieldId = (ScheduleFieldId)parcialAudit.Tag;
+                                ScheduleField field = definition.GetField(fieldId);
 
-                                try
+                                if (field != null && field.IsValidObject)
                                 {
-                                    // Intentar corregir sin importar el tipo de campo
+                                    Log($"  [6] Activando 'Use project settings' en campo PARCIAL...");
                                     FormatOptions options = field.GetFormatOptions();
 
-                                    // Modificar solo lo esencial:
-                                    // 1. Desactivar "Use project settings"
-                                    options.UseDefault = false;
-
-                                    // 2. Establecer precisión a 2 decimales
-                                    options.Accuracy = 0.01;
-
-                                    // 3. Quitar símbolo de unidad (dejar "None")
-                                    options.SetSymbolTypeId(new ForgeTypeId());
-
-                                    // NO tocar:
-                                    // - SetUnitTypeId() → Conserva las unidades actuales
-                                    // - RoundingMethod → Conserva el método actual
-
-                                    // Aplicar cambios
+                                    options.UseDefault = true;
                                     field.SetFormatOptions(options);
 
-                                    // ✅ Éxito
                                     parcialCorregidos++;
                                     tablaModificada = true;
-                                    Log($"  [6] OK Formato PARCIAL corregido (Tipo: {field.FieldType})");
+                                    Log("  [6] OK 'Use project settings' activado");
                                 }
-                                catch (Exception ex)
-                                {
-                                    // ❌ Este campo específico no acepta corrección
-                                    string errorMsg = $"No se pudo corregir PARCIAL en '{elementData.Nombre}' (Tipo: {field.FieldType}): {ex.Message}";
-                                    result.Errores.Add(errorMsg);
-                                    parcialSaltados++;
-                                    Log($"  [6] SALTADO ({field.FieldType}): {ex.Message}");
-                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"No se pudo activar 'Use project settings' en '{elementData.Nombre}': {ex.Message}";
+                                result.Errores.Add(errorMsg);
+                                parcialSaltados++;
+                                Log($"  [6] ERROR: {ex.Message}");
                             }
                         }
 
@@ -217,34 +245,31 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
 
                                 if (param == null && empresaParamElem != null)
                                 {
-                                    result.Errores.Add($"Error en '{elementData.Nombre}': Parámetro EMPRESA no vinculado.");
-                                    Log("  [7] ERROR: EMPRESA no vinculado");
+                                    result.Errores.Add($"Error en tabla '{elementData.Nombre}': El parámetro 'EMPRESA' no está vinculado. Ejecute el Add-in 'Verificar Parámetro Empresa'.");
                                 }
                                 else if (param != null && !param.IsReadOnly)
                                 {
                                     param.Set(EMPRESA_PARAM_VALUE);
                                     empresaCorregidos++;
                                     tablaModificada = true;
-                                    Log("  [7] OK EMPRESA asignado");
                                 }
                                 else if (param == null && empresaParamElem == null)
                                 {
-                                    result.Errores.Add($"Error en '{elementData.Nombre}': EMPRESA no existe.");
-                                    Log("  [7] ERROR: EMPRESA no existe");
+                                    result.Errores.Add($"Error en tabla '{elementData.Nombre}': No se encontró el Parámetro Compartido 'EMPRESA' en el proyecto.");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                result.Errores.Add($"Error EMPRESA en '{elementData.Nombre}': {ex.Message}");
-                                Log($"  [7] ERROR: {ex.Message}");
+                                result.Errores.Add($"Error al asignar 'EMPRESA' en tabla '{elementData.Nombre}': {ex.Message}");
                             }
                         }
+
 
                         if (tablaModificada)
                         {
                             tablasCorregidas++;
                         }
-                    }
+                    } // Fin del foreach
 
                     if (result.Errores.Count == 0)
                     {
@@ -252,61 +277,148 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                     }
 
                     trans.Commit();
-                    Log("\n=== TRANSACCIÓN COMPLETADA ===");
                 }
                 catch (Exception ex)
                 {
                     trans.RollBack();
                     result.Exitoso = false;
-                    result.Mensaje = $"Error fatal: {ex.Message}";
+                    result.Mensaje = $"Error fatal en la transacción de tablas: {ex.Message}";
                     result.Errores.Add(ex.Message);
-                    Log($"\n=== TRANSACCIÓN REVERTIDA ===");
-                    Log($"ERROR: {ex.Message}");
                 }
-            }
+            } // Fin del using Transaction
 
+            // --- 9. Lógica de Mensaje Final ---
             if (result.Exitoso)
             {
-                result.Mensaje = $"Corrección completa.\n\n" +
-                                 $"Tablas modificadas: {tablasCorregidas}\n" +
-                                 $"Formatos PARCIAL corregidos: {parcialCorregidos}\n" +
-                                 $"Formatos PARCIAL saltados: {parcialSaltados}\n\n" +
+                result.Mensaje = $"Corrección de tablas completa.\n\n" +
+                                 $"Tablas únicas modificadas: {tablasCorregidas}\n\n" +
                                  $"Detalles:\n" +
-                                 $"- Nombres: {nombresCorregidos}\n" +
-                                 $"- Reclasificadas: {tablasReclasificadas}\n" +
-                                 $"- EMPRESA: {empresaCorregidos}\n" +
-                                 $"- Filtros: {filtrosCorregidos}\n" +
-                                 $"- Itemize: {contenidosCorregidos}\n" +
-                                 $"- Links: {linksIncluidos}\n" +
-                                 $"- Encabezados: {columnasRenombradas}\n" +
-                                 $"- Columnas ocultas: {columnasOcultadas}\n\n" +
-                                 $"Log: {_logPath}";
-
-                Log($"\n=== RESUMEN ===");
-                Log($"Tablas modificadas: {tablasCorregidas}");
-                Log($"PARCIAL corregidos: {parcialCorregidos}");
-                Log($"PARCIAL saltados: {parcialSaltados}");
+                                 $"- Formatos 'PARCIAL' corregidos (Use project settings): {parcialCorregidos}\n" +
+                                 $"- Nombres de tabla corregidos: {nombresCorregidos}\n" +
+                                 $"- Tablas reclasificadas: {tablasReclasificadas}\n" +
+                                 $"- Parámetros 'EMPRESA' corregidos: {empresaCorregidos}\n" +
+                                 $"- Filtros corregidos: {filtrosCorregidos}\n" +
+                                 $"- Contenidos (Itemize) corregidos: {contenidosCorregidos}\n" +
+                                 $"- 'Include Links' activados: {linksIncluidos}\n" +
+                                 $"- Encabezados renombrados: {columnasRenombradas}\n" +
+                                 $"- Columnas ocultadas: {columnasOcultadas}";
             }
             else
             {
                 if (result.Errores.Count > 0)
                 {
-                    result.Mensaje = $"Errores: {result.Errores.Count} (transacción revertida)\n\n" +
-                                     string.Join("\n", result.Errores.Take(5)) +
-                                     $"\n\nLog: {_logPath}";
+                    result.Mensaje = $"Se encontraron {result.Errores.Count} errores during la corrección de tablas (la transacción fue revertida):\n\n" +
+                                     string.Join("\n", result.Errores.Take(5));
                 }
-
-                Log($"\n=== FALLIDO ===");
-                Log($"Errores: {result.Errores.Count}");
+                else if (string.IsNullOrEmpty(result.Mensaje))
+                {
+                    result.Mensaje = "La corrección de tablas se ejecutó pero no se detectaron errores. La transacción fue revertida.";
+                }
             }
+
+            if (parcialSaltados > 0)
+                result.Mensaje += $"\n- Formatos 'PARCIAL' saltados por error: {parcialSaltados}";
 
             return result;
         }
+
+        #region Corrección de Unidades Globales
+
+        public ProcessingResult UpdateProjectUnits(List<ElementData> unitsData)
+        {
+            var result = new ProcessingResult { Exitoso = false };
+            int unitsCorregidas = 0;
+
+            Log("=== CORRECCIÓN DE UNIDADES GLOBALES ===\n");
+
+            using (Transaction trans = new Transaction(_doc, "Corregir Unidades Globales"))
+            {
+                try
+                {
+                    trans.Start();
+                    Units projectUnits = _doc.GetUnits();
+
+                    foreach (var unitData in unitsData)
+                    {
+                        if (unitData.Categoria != "UNIDADES GLOBALES")
+                            continue;
+                        var auditItem = unitData.AuditResults.FirstOrDefault(a => a.IsCorrectable);
+                        if (auditItem == null || auditItem.Tag == null)
+                            continue;
+                        ForgeTypeId specTypeId = auditItem.Tag as ForgeTypeId;
+                        if (specTypeId == null)
+                            continue;
+                        Log($"\n--- Corrigiendo {unitData.Nombre} ---");
+
+                        try
+                        {
+                            FormatOptions newFormat = null;
+                            if (unitData.Nombre == "Volume")
+                            {
+                                newFormat = new FormatOptions(UnitTypeId.CubicMeters, new ForgeTypeId());
+                                Log("  Configurando: Cubic meters, 2 decimales, sin símbolo");
+                            }
+                            else if (unitData.Nombre == "Area")
+                            {
+                                newFormat = new FormatOptions(UnitTypeId.SquareMeters, new ForgeTypeId());
+                                Log("  Configurando: Square meters, 2 decimales, sin símbolo");
+                            }
+                            else if (unitData.Nombre == "Length")
+                            {
+                                newFormat = new FormatOptions(UnitTypeId.Meters, new ForgeTypeId());
+                                Log("  Configurando: Meters, 2 decimales, sin símbolo");
+                            }
+
+                            if (newFormat != null)
+                            {
+                                newFormat.Accuracy = 0.01;
+                                newFormat.UseDefault = false;
+                                projectUnits.SetFormatOptions(specTypeId, newFormat);
+                                unitsCorregidas++;
+                                Log($"  OK {unitData.Nombre} configurado correctamente");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Errores.Add($"Error al configurar {unitData.Nombre}: {ex.Message}");
+                            Log($"  ERROR: {ex.Message}");
+                        }
+                    }
+
+                    _doc.SetUnits(projectUnits);
+                    if (result.Errores.Count == 0)
+                    {
+                        result.Exitoso = true;
+                    }
+
+                    trans.Commit();
+                    Log("\n=== UNIDADES GLOBALES ACTUALIZADAS ===");
+                }
+                catch (Exception ex)
+                {
+                    trans.RollBack();
+                    result.Exitoso = false;
+                    result.Mensaje = $"Error fatal al actualizar unidades: {ex.Message}";
+                    result.Errores.Add(ex.Message);
+                    Log($"\n=== ERROR FATAL: {ex.Message} ===");
+                }
+            }
+
+            result.Mensaje = result.Exitoso
+                ? $"✅ Unidades globales corregidas: {unitsCorregidas}"
+                : $"❌ Error al corregir unidades globales";
+            return result;
+        }
+
+        #endregion
+
+        #region Métodos Helper
 
         private bool RenameAndReclassify(ViewSchedule view, RenamingJobData jobData, List<string> errores)
         {
             try
             {
+                // Solo renombrar si el jobData lo especifica
                 if (jobData.NuevoNombre != null && view.Name != jobData.NuevoNombre)
                 {
                     view.Name = jobData.NuevoNombre;
@@ -334,13 +446,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error al reclasificar '{view.Name}': {ex.Message}");
+                errores.Add($"Error al reclasificar tabla '{view.Name}': {ex.Message}");
                 return false;
             }
         }
-
-        #region Métodos Helper
-
         private bool WriteHeadings(Dictionary<ScheduleField, string> headingsToFix, List<string> errores, string nombreTabla)
         {
             try
@@ -358,7 +467,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error encabezados en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error al escribir encabezados en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -378,7 +487,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error ocultar columnas en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error al ocultar columnas en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -391,8 +500,10 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 foreach (var filtroInfo in filtrosCorrectos)
                 {
                     ScheduleField field = FindField(definition, filtroInfo.FieldName);
-                    if (field == null) continue;
-
+                    if (field == null)
+                    {
+                        continue;
+                    }
                     ScheduleFilter newFilter = CreateScheduleFilter(field.FieldId, filtroInfo, errores, nombreTabla);
                     if (newFilter != null)
                     {
@@ -403,7 +514,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             }
             catch (Exception ex)
             {
-                errores.Add($"Error filtros en '{nombreTabla}': {ex.Message}");
+                errores.Add($"Error al escribir filtros en '{nombreTabla}': {ex.Message}");
                 return false;
             }
         }
@@ -414,10 +525,9 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 filtroInfo.FilterType != ScheduleFilterType.HasValue &&
                 filtroInfo.FilterType != ScheduleFilterType.HasNoValue)
             {
-                errores.Add($"Filtro nulo en '{filtroInfo.FieldName}' - '{nombreTabla}'.");
+                errores.Add($"Valor de filtro nulo no compatible para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
                 return null;
             }
-
             switch (filtroInfo.Value)
             {
                 case string s:
@@ -431,7 +541,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 case null:
                     return new ScheduleFilter(fieldId, filtroInfo.FilterType);
                 default:
-                    errores.Add($"Tipo filtro inválido ({filtroInfo.Value.GetType()}) - '{filtroInfo.FieldName}' en '{nombreTabla}'.");
+                    errores.Add($"Valor de filtro no compatible ({filtroInfo.Value.GetType()}) para '{filtroInfo.FieldName}' en tabla '{nombreTabla}'.");
                     return null;
             }
         }

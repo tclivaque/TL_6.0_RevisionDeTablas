@@ -8,18 +8,17 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using TL60_RevisionDeTablas.Models;
-// (¡CORRECCIÓN! El 'using' ahora apunta a la nueva carpeta del plugin)
 using TL60_RevisionDeTablas.Plugins.Tablas;
 using TL60_RevisionDeTablas.Services;
+
+// (No se necesitan usings de agrupación)
 
 namespace TL60_RevisionDeTablas.UI
 {
     public partial class MainWindow : Window
     {
-        // (El resto del archivo es idéntico al original)
         private readonly List<DiagnosticRow> _originalDiagnosticRows;
         private List<DiagnosticRow> _diagnosticRows;
-
         private readonly List<ElementData> _elementosData;
         private readonly Document _doc;
         private readonly ScheduleUpdateAsync _writerAsync;
@@ -29,7 +28,7 @@ namespace TL60_RevisionDeTablas.UI
             List<DiagnosticRow> diagnosticRows,
             List<ElementData> elementosData,
             Document doc,
-            ScheduleUpdateAsync writerAsync, // <-- Ahora coincide con el 'using' de Plugins.Tablas
+            ScheduleUpdateAsync writerAsync,
             ViewActivatorAsync viewActivator)
         {
             InitializeComponent();
@@ -61,6 +60,9 @@ namespace TL60_RevisionDeTablas.UI
             DiagnosticDataGrid.ItemsSource = _diagnosticRows;
         }
 
+        // ==========================================================
+        // ===== MÉTODO CORREGIDO (Switch rellenado)
+        // ==========================================================
         private void FilterButton_Click(object sender, RoutedEventArgs e)
         {
             if (!(sender is Button button) || !(button.Tag is string filterTag)) return;
@@ -89,55 +91,50 @@ namespace TL60_RevisionDeTablas.UI
             DiagnosticDataGrid.ItemsSource = _diagnosticRows;
         }
 
+        // --- MÉTODO DE CORRECIÓN (Ya corregido en la respuesta anterior) ---
         private async void CorregirButton_Click(object sender, RoutedEventArgs e)
         {
-            var idsACorregir = _originalDiagnosticRows
-                .Where(r => r.Estado == EstadoParametro.Corregir)
-                .Select(r => r.ElementId)
-                .Distinct()
-                .ToList();
-
-            if (idsACorregir.Count == 0)
-            {
-                MessageBox.Show("No hay elementos con correcciones aplicables (FILTRO o CONTENIDO).", "Información", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var elementosACorregir = _elementosData
-                .Where(ed => idsACorregir.Contains(ed.ElementId))
-                .ToList();
+            CorregirButton.IsEnabled = false;
+            ExportarButton.IsEnabled = false;
 
             try
             {
-                CorregirButton.IsEnabled = false;
-                CerrarButton.IsEnabled = false;
-                CorregirButton.Content = "Corrigiendo...";
-
                 ProcessingResult writeResult = await Task.Run(() =>
                 {
-                    return _writerAsync.UpdateSchedulesAsync(_doc, elementosACorregir);
+                    // Llamar al handler con la lista COMPLETA
+                    return _writerAsync.UpdateSchedulesAsync(_doc, _elementosData);
                 });
 
-                CorregirButton.IsEnabled = true;
-                CerrarButton.IsEnabled = true;
-                CorregirButton.Content = "Corregir";
+                // Mostrar el resultado combinado
+                bool huboErrores = !writeResult.Exitoso;
+                string mensaje = writeResult.Mensaje;
 
-                if (!writeResult.Exitoso)
+                if (huboErrores && writeResult.Errores.Count > 0)
                 {
-                    MessageBox.Show(writeResult.Mensaje, "Error al Corregir", MessageBoxButton.OK, MessageBoxImage.Error);
+                    mensaje += "\n\nErrores:\n" + string.Join("\n", writeResult.Errores.Take(10));
                 }
-                else
+
+                if (string.IsNullOrWhiteSpace(mensaje))
                 {
-                    MessageBox.Show(writeResult.Mensaje, "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
-                    this.Close();
+                    mensaje = "No se encontraron elementos para corregir.";
+                }
+
+                MessageBox.Show(mensaje, "Resultado de Corrección", MessageBoxButton.OK,
+                    huboErrores ? MessageBoxImage.Error : MessageBoxImage.Information);
+
+                if (!huboErrores)
+                {
+                    Close();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error fatal: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error durante la corrección:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
                 CorregirButton.IsEnabled = true;
-                CerrarButton.IsEnabled = true;
-                CorregirButton.Content = "Corregir";
+                ExportarButton.IsEnabled = true;
             }
         }
 
@@ -153,7 +150,6 @@ namespace TL60_RevisionDeTablas.UI
             {
                 try
                 {
-                    // (El 'using' de ExcelExportService debe ser 'TL60_RevisionDeTablas.Plugins.Tablas')
                     var exportService = new ExcelExportService();
                     byte[] fileBytes = exportService.ExportToExcel(_diagnosticRows);
                     File.WriteAllBytes(dialog.FileName, fileBytes);

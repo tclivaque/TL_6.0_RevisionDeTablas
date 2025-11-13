@@ -103,7 +103,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 ElementId = view.Id,
                 Element = view,
                 Nombre = view.Name,
-                Categoria = view.Category?.Name ?? "Tabla de Planificación",
+                Categoria = "TABLAS",
                 CodigoIdentificacion = assemblyCode
             };
 
@@ -148,15 +148,8 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             if (auditContent.Estado == EstadoParametro.Corregir) auditContent.Tag = true;
             if (auditLinks.Estado == EstadoParametro.Corregir) auditLinks.Tag = true;
             if (auditColumns.Estado == EstadoParametro.Corregir) auditColumns.Tag = auditColumns.Tag;
+            if (auditParcial.Estado == EstadoParametro.Corregir) auditParcial.Tag = auditParcial.Tag;
 
-            // ==========================================================
-            // ===== (¡AQUÍ ESTÁ LA CORRECCIÓN!)
-            // ==========================================================
-            // Se ha eliminado la línea conflictiva:
-            // if (auditParcial.Estado == EstadoParametro.Corregir) auditParcial.Tag = ...;
-            // El 'Tag' de 'auditParcial' (que contiene el ScheduleFieldId) 
-            // ya se asignó correctamente en 'ProcessParcialFormat' y no debe tocarse.
-            // ==========================================================
 
             elementData.DatosCompletos = elementData.AuditResults.All(r => r.Estado == EstadoParametro.Correcto);
 
@@ -569,7 +562,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
         }
         #endregion
 
-        #region Auditoría 6: FORMATO "PARCIAL" (Lógica Exhaustiva)
+        #region Auditoría 6: FORMATO "PARCIAL" (NUEVA LÓGICA)
 
         private AuditItem ProcessParcialFormat(ScheduleDefinition definition)
         {
@@ -585,6 +578,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 .Select(kvp => kvp.Key)
                 .ToList();
             parcialAliases.Add("PARCIAL");
+
             for (int i = 0; i < definition.GetFieldCount(); i++)
             {
                 var field = definition.GetField(i);
@@ -606,76 +600,35 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             if (parcialField.FieldType == ScheduleFieldType.Count)
             {
                 item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Correcto: El campo 'Recuento' (Count) no requiere formato.";
+                item.Mensaje = "✅ Correcto: El campo 'Recuento' (Count) no requiere formato.";
                 return item;
             }
 
-            // ==========================================================
-            // ===== (¡CORREGIDO!) Lógica de 'UseDefault'
-            // ==========================================================
-
-            FormatOptions options = parcialField.GetFormatOptions();
-
-            // 1. Definir el estado "Correcto"
-            const bool correctUseDefault = false;
-            const double correctRounding = 0.01;
-            // (Para 'None', el símbolo es un ForgeTypeId nulo o vacío)
-
-            // 2. Obtener el estado "Actual"
-            bool actualUseDefault = options.UseDefault;
-            double actualRounding = 0.0; // Default
-            ForgeTypeId actualSymbolId = null;
-            string actualSymbolText = "(Project)";
-            bool isCorrect = false;
-
-            if (actualUseDefault)
+            try
             {
-                // Si "Use project settings" está marcado, está mal.
-                // No podemos leer 'Accuracy' o 'Symbol' (daría error).
-                isCorrect = false;
-                actualRounding = 99; // Usar un valor que fuerce el fallo
-                actualSymbolText = "(Project)";
-            }
-            else
-            {
-                // "Use project settings" está desmarcado, podemos leer de forma segura.
-                try
+                FormatOptions options = parcialField.GetFormatOptions();
+                bool usaProyecto = options.UseDefault;
+                item.ValorActual = usaProyecto ? "Usa configuración de proyecto" : "Configuración personalizada";
+                item.ValorCorregido = "Usa configuración de proyecto";
+                if (usaProyecto)
                 {
-                    actualRounding = options.Accuracy;
-                    actualSymbolId = options.GetSymbolTypeId();
-                    actualSymbolText = actualSymbolId?.TypeId ?? "NINGUNO";
-
-                    // Comprobar las tres condiciones
-                    bool isUseDefaultCorrect = (actualUseDefault == correctUseDefault); // (Siempre true aquí)
-                    bool isRoundingCorrect = (actualRounding == correctRounding);
-                    bool isSymbolCorrect = (actualSymbolId == null || string.IsNullOrEmpty(actualSymbolId.TypeId));
-
-                    isCorrect = isUseDefaultCorrect && isRoundingCorrect && isSymbolCorrect;
+                    item.Estado = EstadoParametro.Correcto;
+                    item.Mensaje = "✅ Correcto: Usa configuración de proyecto";
+                    item.IsCorrectable = false;
                 }
-                catch (Exception ex)
+                else
                 {
-                    // Error inesperado al leer propiedades (diferente de UseDefault)
-                    item.Estado = EstadoParametro.Error;
-                    item.Mensaje = $"Error al leer formato: {ex.Message}";
-                    return item;
+                    item.Estado = EstadoParametro.Corregir;
+                    item.Mensaje = "⚠️ Corregir: Debe activar 'Use project settings'";
+                    item.IsCorrectable = true;
+                    item.Tag = parcialField.FieldId;
                 }
             }
-
-            // 4. Reportar
-            item.ValorActual = $"Default: {actualUseDefault}, Símbolo: {actualSymbolText}, Round: {actualRounding}";
-            item.ValorCorregido = $"Default: {correctUseDefault}, Símbolo: NINGUNO, Round: {correctRounding}";
-
-            if (isCorrect)
+            catch (Exception ex)
             {
-                item.Estado = EstadoParametro.Correcto;
-                item.Mensaje = "Correcto: El formato de 'PARCIAL' es adimensional y con 2 decimales.";
-            }
-            else
-            {
-                item.Estado = EstadoParametro.Corregir;
-                item.Mensaje = "Corregir: El formato de 'PARCIAL' debe ser personalizado (sin símbolo y con 2 decimales).";
-                item.IsCorrectable = true;
-                item.Tag = parcialField.FieldId; // Marcar para corrección
+                item.Estado = EstadoParametro.Error;
+                item.Mensaje = $"❌ Error al leer formato: {ex.Message}";
+                item.IsCorrectable = false;
             }
 
             return item;
@@ -704,14 +657,14 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                 item.Estado = EstadoParametro.Corregir;
                 item.Mensaje = $"Corregir: Falta el parámetro de instancia '{EMPRESA_PARAM_NAME}' en la tabla.";
                 item.ValorActual = "(No existe)";
-                item.Tag = EMPRESA_PARAM_VALUE; // Marcar para corrección
+                item.Tag = EMPRESA_PARAM_VALUE;
             }
             else if (param.AsString() != EMPRESA_PARAM_VALUE)
             {
                 item.Estado = EstadoParametro.Corregir;
                 item.Mensaje = $"Corregir: El parámetro '{EMPRESA_PARAM_NAME}' debe tener el valor '{EMPRESA_PARAM_VALUE}'.";
                 item.ValorActual = param.AsString() ?? "(Vacío)";
-                item.Tag = EMPRESA_PARAM_VALUE; // Marcar para corrección
+                item.Tag = EMPRESA_PARAM_VALUE;
             }
             else
             {
@@ -724,6 +677,139 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
             return item;
         }
 
+        #endregion
+
+        #region Auditoría de Unidades Globales del Proyecto
+
+        public List<ElementData> AuditProjectUnits()
+        {
+            var results = new List<ElementData>();
+            try
+            {
+                Units projectUnits = _doc.GetUnits();
+                results.Add(AuditUnitType(projectUnits, SpecTypeId.Volume, "Volume",
+                    UnitTypeId.CubicMeters, "Cubic meters"));
+                results.Add(AuditUnitType(projectUnits, SpecTypeId.Area, "Area",
+                    UnitTypeId.SquareMeters, "Square meters"));
+                results.Add(AuditUnitType(projectUnits, SpecTypeId.Length, "Length",
+                    UnitTypeId.Meters, "Meters"));
+            }
+            catch (Exception ex)
+            {
+                var errorData = new ElementData
+                {
+                    ElementId = ElementId.InvalidElementId,
+                    Nombre = "Unidades Globales",
+                    Categoria = "UNIDADES GLOBALES",
+                    CodigoIdentificacion = "N/A",
+                    DatosCompletos = false
+                };
+                errorData.AuditResults.Add(new AuditItem
+                {
+                    AuditType = "ERROR",
+                    ValorActual = "Error al leer unidades",
+                    ValorCorregido = "N/A",
+                    Estado = EstadoParametro.Error,
+                    Mensaje = $"Error: {ex.Message}",
+                    IsCorrectable = false
+                });
+                results.Add(errorData);
+            }
+            return results;
+        }
+
+        private ElementData AuditUnitType(Units projectUnits, ForgeTypeId specTypeId,
+            string typeName, ForgeTypeId expectedUnitType, string expectedUnitName)
+        {
+            var elementData = new ElementData
+            {
+                ElementId = ElementId.InvalidElementId,
+                Nombre = typeName,
+                Categoria = "UNIDADES GLOBALES",
+                CodigoIdentificacion = typeName,
+                DatosCompletos = false
+            };
+            try
+            {
+                FormatOptions format = projectUnits.GetFormatOptions(specTypeId);
+
+                // Valores esperados
+                const double EXPECTED_ACCURACY = 0.01;
+                // --- LÍNEA ELIMINADA PARA CORREGIR ADVERTENCIA ---
+                // ForgeTypeId expectedSymbol = null; 
+                // --- FIN DE CORRECCIÓN ---
+
+                // Valores actuales
+                ForgeTypeId actualUnitType = format.GetUnitTypeId();
+                double actualAccuracy = format.Accuracy;
+                ForgeTypeId actualSymbol = format.GetSymbolTypeId();
+
+                // Verificar cada propiedad
+                bool unitCorrect = (actualUnitType?.TypeId == expectedUnitType?.TypeId);
+                bool accuracyCorrect = (Math.Abs(actualAccuracy - EXPECTED_ACCURACY) < 0.001);
+                // La comprobación de símbolo ya era correcta
+                bool symbolCorrect = (actualSymbol == null || string.IsNullOrEmpty(actualSymbol?.TypeId));
+                bool allCorrect = unitCorrect && accuracyCorrect && symbolCorrect;
+
+                // Construir mensajes
+                string actualUnit = GetUnitDisplayName(actualUnitType);
+                string actualSymbolText = (actualSymbol == null || string.IsNullOrEmpty(actualSymbol?.TypeId))
+                    ? "None"
+                    : actualSymbol.TypeId;
+                string valorActual = $"Units: {actualUnit}, Rounding: {actualAccuracy:0.##}, Symbol: {actualSymbolText}";
+                string valorCorregido = $"Units: {expectedUnitName}, Rounding: 0.01 (2 decimales), Symbol: None";
+                var auditItem = new AuditItem
+                {
+                    AuditType = $"CONFIG {typeName.ToUpper()}",
+                    ValorActual = valorActual,
+                    ValorCorregido = valorCorregido,
+                    Estado = allCorrect ? EstadoParametro.Correcto : EstadoParametro.Corregir,
+                    Mensaje = allCorrect
+                        ? $"✅ Correcto: {typeName} configurado correctamente"
+                        : $"⚠️ Corregir: {typeName} debe configurarse como ({expectedUnitName}, 2 decimales, sin símbolo)",
+                    IsCorrectable = !allCorrect,
+                    Tag = specTypeId
+                };
+                elementData.AuditResults.Add(auditItem);
+                elementData.DatosCompletos = allCorrect;
+            }
+            catch (Exception ex)
+            {
+                var errorItem = new AuditItem
+                {
+                    AuditType = $"ERROR {typeName.ToUpper()}",
+                    ValorActual = "Error al leer",
+                    ValorCorregido = "N/A",
+                    Estado = EstadoParametro.Error,
+                    Mensaje = $"❌ Error: {ex.Message}",
+                    IsCorrectable = false
+                };
+                elementData.AuditResults.Add(errorItem);
+            }
+            return elementData;
+        }
+
+        private string GetUnitDisplayName(ForgeTypeId unitTypeId)
+        {
+            if (unitTypeId == null || string.IsNullOrEmpty(unitTypeId.TypeId))
+                return "Unknown";
+            try
+            {
+                string typeId = unitTypeId.TypeId.ToLower();
+                if (typeId.Contains("cubicmeters")) return "Cubic meters";
+                if (typeId.Contains("cubicfeet")) return "Cubic feet";
+                if (typeId.Contains("squaremeters")) return "Square meters";
+                if (typeId.Contains("squarefeet")) return "Square feet";
+                if (typeId.Contains("meters") && !typeId.Contains("cubic") && !typeId.Contains("square")) return "Meters";
+                if (typeId.Contains("feet") && !typeId.Contains("cubic") && !typeId.Contains("square")) return "Feet";
+
+                return unitTypeId.TypeId;
+            }
+            catch
+            {
+                return "Unknown";
+            }
+        }
         #endregion
     }
 }

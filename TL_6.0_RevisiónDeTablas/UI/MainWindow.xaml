@@ -132,6 +132,7 @@
                     <DataGridTextColumn Header="DESCRIPCIÓN" Binding="{Binding Descripcion}" Width="300"/>
                     <DataGridTextColumn Header="AUDITORÍA" Binding="{Binding NombreParametro}" Width="150"/>
 
+
                     <DataGridTemplateColumn Header="VALOR ACTUAL" Width="200">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
