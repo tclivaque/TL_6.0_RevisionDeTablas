@@ -52,9 +52,10 @@
 
         <Style x:Key="LegendButtonStyle" TargetType="Button">
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Padding" Value="15,8"/>
             <Setter Property="Margin" Value="5,0"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
@@ -63,7 +64,7 @@
                         <Border Background="{TemplateBinding Background}"
                                  BorderBrush="{TemplateBinding BorderBrush}"
                                  BorderThickness="{TemplateBinding BorderThickness}"
-                                 CornerRadius="3"
+                                 CornerRadius="4"
                                  Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -79,7 +80,7 @@
 
     </UserControl.Resources>
 
-    <Grid Margin="15">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -87,7 +88,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Auditoría de Parámetros COBie" FontSize="24" FontWeight="Bold" Foreground="#2C3E50" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+        <TextBlock Grid.Row="0" Text="Auditoría de Parámetros COBie" FontSize="24" FontWeight="Bold" Foreground="#2C3E50" HorizontalAlignment="Center" Margin="0,0,0,20"/>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
             <Button Style="{StaticResource LegendButtonStyle}" Background="#EAECEE" BorderBrush="#BDC3C7" Click="FilterButton_Click" Tag="Total">
@@ -113,7 +114,7 @@
                       RowStyle="{StaticResource DiagnosticRowStyle}" RowHeight="35" FontSize="12"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="" Width="40">
+                    <DataGridTemplateColumn Header="ABRIR" Width="50">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Button Content="👁️" Style="{StaticResource ShowButtonStyle}" IsEnabled="{Binding EsSeleccionable}" Click="MostrarButton_Click" Tag="{Binding}"/>
@@ -129,13 +130,13 @@
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80"/>
-                    <DataGridTextColumn Header="Grupo" Binding="{Binding GrupoCOBie}" Width="100"/>
-                    <DataGridTextColumn Header="Assembly Code" Binding="{Binding AssemblyCode}" Width="120"/>
-                    <DataGridTextColumn Header="Descripción" Binding="{Binding Descripcion}" Width="200"/>
-                    <DataGridTextColumn Header="Parámetro" Binding="{Binding NombreParametro}" Width="250"/>
-                    <DataGridTextColumn Header="Valor Actual" Binding="{Binding ValorActual}" Width="250"/>
-                    <DataGridTextColumn Header="Valor Correcto" Binding="{Binding ValorCorregido}" Width="250"/>
-                    <DataGridTextColumn Header="Mensaje" Binding="{Binding Mensaje}" Width="*"/>
+                    <DataGridTextColumn Header="GRUPO" Binding="{Binding GrupoCOBie}" Width="100"/>
+                    <DataGridTextColumn Header="ASSEMBLY CODE" Binding="{Binding AssemblyCode}" Width="120"/>
+                    <DataGridTextColumn Header="DESCRIPCIÓN" Binding="{Binding Descripcion}" Width="200"/>
+                    <DataGridTextColumn Header="PARÁMETRO" Binding="{Binding NombreParametro}" Width="250"/>
+                    <DataGridTextColumn Header="VALOR ACTUAL" Binding="{Binding ValorActual}" Width="250"/>
+                    <DataGridTextColumn Header="VALOR CORRECTO" Binding="{Binding ValorCorregido}" Width="250"/>
+                    <DataGridTextColumn Header="MENSAJE" Binding="{Binding Mensaje}" Width="*"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
