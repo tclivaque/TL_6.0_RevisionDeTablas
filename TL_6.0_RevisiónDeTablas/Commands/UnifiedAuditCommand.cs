@@ -12,7 +12,6 @@ using TL60_RevisionDeTablas.Models;
 using TL60_RevisionDeTablas.Core;
 using TL60_RevisionDeTablas.Plugins.COBie.Services;
 using TL60_RevisionDeTablas.Plugins.COBie.Models;
-using TL60_RevisionDeTablas.Plugins.Tablas;
 
 namespace TL60_RevisionDeTablas.Commands
 {
@@ -40,26 +39,20 @@ namespace TL60_RevisionDeTablas.Commands
                 }
                 catch (Exception ex)
                 {
-                    TaskDialog.Show("Error en COBie", $"Error al procesar plugin COBie:\n{ex.Message}");
+                    TaskDialog.Show("Error en COBie", $"Error al procesar plugin COBie:\n{ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
                 }
 
                 // ====================================
-                // PARTE 2: PROCESAR PLUGIN TABLAS
+                // PARTE 2: PLUGIN TABLAS (Por implementar)
                 // ====================================
+                // TODO: Implementar ProcessTablasPlugin cuando se complete la integración
+                // El plugin Tablas requiere más parámetros y lógica que se integrará después
                 TablasPluginControl tablasControl = null;
-                try
-                {
-                    tablasControl = ProcessTablasPlugin(doc);
-                }
-                catch (Exception ex)
-                {
-                    TaskDialog.Show("Error en Tablas", $"Error al procesar plugin Tablas:\n{ex.Message}");
-                }
 
                 // ====================================
                 // PARTE 3: MOSTRAR VENTANA UNIFICADA
                 // ====================================
-                if (cobieControl != null || tablasControl != null)
+                if (cobieControl != null)
                 {
                     var unifiedWindow = new UnifiedWindow(cobieControl, tablasControl);
                     unifiedWindow.Show();
@@ -67,7 +60,7 @@ namespace TL60_RevisionDeTablas.Commands
                 }
                 else
                 {
-                    TaskDialog.Show("Error", "No se pudo cargar ningún plugin.");
+                    TaskDialog.Show("Error", "No se pudo cargar el plugin COBie.");
                     return Result.Failed;
                 }
             }
@@ -145,8 +138,8 @@ namespace TL60_RevisionDeTablas.Commands
                 viewManager.ApplyGraphicsAndIsolate(elementosData);
             }
 
-            // Construir datos de diagnóstico
-            var diagnosticBuilder = new DiagnosticDataBuilder();
+            // Construir datos de diagnóstico (usar fully qualified name para evitar ambigüedad)
+            var diagnosticBuilder = new TL60_RevisionDeTablas.Plugins.COBie.Services.DiagnosticDataBuilder();
             var diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
 
             // Crear UserControl
@@ -155,36 +148,6 @@ namespace TL60_RevisionDeTablas.Commands
                 facilityProcessor, floorProcessor, roomProcessor, elementProcessor, config.Categorias);
 
             return cobieControl;
-        }
-
-        private TablasPluginControl ProcessTablasPlugin(Document doc)
-        {
-            // Inicializar servicios
-            var sheetsService = new GoogleSheetsService();
-            sheetsService.Initialize();
-
-            var scheduleProcessor = new ScheduleProcessor(doc, sheetsService);
-            var missingScheduleAuditor = new MissingScheduleAuditor(doc, sheetsService);
-
-            // Procesar tablas
-            var elementosData = scheduleProcessor.ProcessSchedules();
-            var missingSchedulesData = missingScheduleAuditor.ProcessMissingSchedules();
-            elementosData.AddRange(missingSchedulesData);
-
-            // Construir datos de diagnóstico
-            var diagnosticBuilder = new DiagnosticDataBuilder();
-            var diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
-
-            // Crear servicios de actualización
-            var scheduleUpdateAsync = new ScheduleUpdateAsync();
-            var viewActivatorAsync = new ViewActivatorAsync();
-
-            // Crear UserControl
-            var tablasControl = new TablasPluginControl(
-                diagnosticRows, elementosData, doc,
-                scheduleUpdateAsync, viewActivatorAsync);
-
-            return tablasControl;
         }
     }
 }

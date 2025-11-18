@@ -140,10 +140,22 @@ namespace TL60_RevisionDeTablas.Plugins.COBie.Commands
                 var diagnosticRows = diagnosticBuilder.BuildDiagnosticRows(elementosData);
 
                 // PASO 9: MOSTRAR VENTANA
-                var diagnosticWindow = new DiagnosticWindow(
+                // NOTA: Este comando ahora usa la ventana unificada UnifiedWindow
+                // Si quieres usar este plugin de forma independiente, usa CobiePluginControl
+                var cobieControl = new CobiePluginControl(
                     diagnosticRows, elementosData, doc,
                     facilityProcessor, floorProcessor, roomProcessor, elementProcessor, config.Categorias);
-                diagnosticWindow.Show();
+
+                // Crear ventana simple para mostrar el control
+                var window = new System.Windows.Window
+                {
+                    Title = "Diagnóstico de Parámetros COBie",
+                    Content = cobieControl,
+                    Width = 1600,
+                    Height = 700,
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+                };
+                window.Show();
 
                 return Result.Succeeded;
             }

@@ -5,7 +5,8 @@ using Autodesk.Revit.DB;
 namespace TL60_RevisionDeTablas.Models
 {
     /// <summary>
-    /// Modelo para una fila del diagnóstico (tabla de la ventana)
+    /// Modelo para una fila del diagnóstico (tabla de la ventana).
+    /// Soporta tanto plugin Tablas como plugin COBie.
     /// </summary>
     public class DiagnosticRow
     {
@@ -16,8 +17,21 @@ namespace TL60_RevisionDeTablas.Models
 
         /// <summary>
         /// Grupo para agrupar filas: "UNIDADES GLOBALES" o "TABLAS"
+        /// Usado por: Plugin Tablas
         /// </summary>
         public string Grupo { get; set; }
+
+        /// <summary>
+        /// Grupo COBie: "FACILITY", "FLOOR", "SPACE", "TYPE", "COMPONENT"
+        /// Usado por: Plugin COBie
+        /// </summary>
+        public string GrupoCOBie { get; set; }
+
+        /// <summary>
+        /// Código de ensamblaje (Assembly Code)
+        /// Usado por: Plugin COBie
+        /// </summary>
+        public string AssemblyCode { get; set; }
 
         public string CodigoIdentificacion { get; set; }
         public string Descripcion { get; set; }

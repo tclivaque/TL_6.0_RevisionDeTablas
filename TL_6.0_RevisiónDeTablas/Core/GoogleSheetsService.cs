@@ -115,5 +115,64 @@ namespace TL60_RevisionDeTablas.Core
                 return string.Empty;
             return row[columnIndex]?.ToString()?.Trim() ?? string.Empty;
         }
+
+        // ============================================
+        // MÉTODOS ADICIONALES PARA PLUGIN COBie
+        // ============================================
+
+        /// <summary>
+        /// Inicializa el servicio (no-op ya que se inicializa en el constructor)
+        /// Usado por: Plugin COBie (compatibilidad)
+        /// </summary>
+        public void Initialize()
+        {
+            // El servicio ya está inicializado en el constructor
+            // Este método existe solo para compatibilidad con código existente
+            if (_service == null)
+            {
+                InitializeService();
+            }
+        }
+
+        /// <summary>
+        /// Lee una hoja completa por nombre
+        /// Usado por: Plugin COBie
+        /// </summary>
+        public IList<IList<object>> ReadSheet(string spreadsheetId, string sheetName)
+        {
+            return ReadData(spreadsheetId, sheetName);
+        }
+
+        /// <summary>
+        /// Parsea un rango de columnas tipo "D:F" y devuelve (columnaInicio, columnaFin)
+        /// Usado por: Plugin COBie
+        /// </summary>
+        public static (int startCol, int endCol) ParseColumnRange(string columnRange)
+        {
+            if (string.IsNullOrWhiteSpace(columnRange) || !columnRange.Contains(":"))
+                throw new ArgumentException("Formato de rango de columnas inválido. Ejemplo esperado: 'D:F'");
+
+            var parts = columnRange.Split(':');
+            if (parts.Length != 2)
+                throw new ArgumentException("Formato de rango de columnas inválido. Ejemplo esperado: 'D:F'");
+
+            int startCol = ColumnLetterToIndex(parts[0].Trim());
+            int endCol = ColumnLetterToIndex(parts[1].Trim());
+
+            return (startCol, endCol);
+        }
+
+        /// <summary>
+        /// Convierte una letra de columna (ej: "A", "AB") a índice (0-based)
+        /// </summary>
+        private static int ColumnLetterToIndex(string columnLetter)
+        {
+            int index = 0;
+            for (int i = 0; i < columnLetter.Length; i++)
+            {
+                index = index * 26 + (char.ToUpper(columnLetter[i]) - 'A' + 1);
+            }
+            return index - 1; // 0-based
+        }
     }
 }
