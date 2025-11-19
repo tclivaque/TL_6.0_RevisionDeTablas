@@ -148,7 +148,7 @@ namespace TL60_RevisionDeTablas.Plugins.Tablas
                         }
 
                         // --- 2. Corregir FILTROS ---
-                        var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTROS" && a.IsCorrectable);
+                        var filterAudit = elementData.AuditResults.FirstOrDefault(a => a.AuditType == "FILTRO" && a.IsCorrectable);
                         if (filterAudit != null && filterAudit.Tag is List<ScheduleFilterInfo> filtrosCorrectos)
                         {
                             if (WriteFilters(definition, filtrosCorrectos, result.Errores, elementData.Nombre))
