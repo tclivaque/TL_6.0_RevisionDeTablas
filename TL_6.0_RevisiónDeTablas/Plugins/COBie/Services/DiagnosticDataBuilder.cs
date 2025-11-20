@@ -202,7 +202,7 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.Services
             switch (estado)
             {
                 case EstadoParametro.Correcto: return System.Windows.Media.Color.FromRgb(212, 237, 218); // Verde
-                case EstadoParametro.Vacio: return System.Windows.Media.Color.FromRgb(255, 243, 205);    // Amarillo
+                case EstadoParametro.Advertencia: return System.Windows.Media.Color.FromRgb(255, 243, 205);    // Amarillo
                 case EstadoParametro.Corregir: return System.Windows.Media.Color.FromRgb(209, 236, 241); // Azul
                 case EstadoParametro.Error: return System.Windows.Media.Color.FromRgb(248, 215, 218);    // Rojo
                 default: return System.Windows.Media.Colors.White;
@@ -219,7 +219,7 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.Services
 
         private int GetEstadoOrder(EstadoParametro estado)
         {
-            switch (estado) { case EstadoParametro.Corregir: return 1; case EstadoParametro.Vacio: return 2; case EstadoParametro.Error: return 3; case EstadoParametro.Correcto: return 4; default: return 99; }
+            switch (estado) { case EstadoParametro.Corregir: return 1; case EstadoParametro.Advertencia: return 2; case EstadoParametro.Error: return 3; case EstadoParametro.Correcto: return 4; default: return 99; }
         }
 
         private int GetGrupoOrder(string grupo)
@@ -230,10 +230,10 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.Services
         public string GenerateStats(List<DiagnosticRow> rows)
         {
             int totalCorregir = rows.Count(r => r.Estado == EstadoParametro.Corregir);
-            int totalVacio = rows.Count(r => r.Estado == EstadoParametro.Vacio);
+            int totalAdvertencia = rows.Count(r => r.Estado == EstadoParametro.Advertencia);
             int totalError = rows.Count(r => r.Estado == EstadoParametro.Error);
             int totalCorrecto = rows.Count(r => r.Estado == EstadoParametro.Correcto);
-            return $"Total: {rows.Count} | Correctos: {totalCorrecto} | Vacíos: {totalVacio} | A corregir: {totalCorregir} | Errores: {totalError}";
+            return $"Total: {rows.Count} | Correctos: {totalCorrecto} | Advertencias: {totalAdvertencia} | A corregir: {totalCorregir} | Errores: {totalError}";
         }
     } // Fin clase
       // ===== CÓDIGO INACCESIBLE/ERRÓNEO ELIMINADO ('g;') =====

@@ -286,7 +286,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
                             new AuditItem
                             {
                                 AuditType = "CONFIGURACIÓN",
-                                Estado = EstadoParametro.Vacio,
+                                Estado = EstadoParametro.Advertencia,
                                 Mensaje = "La auditoría de elementos modelados (Tablas Faltantes) no está configurada."
                             }
                         }
@@ -443,7 +443,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
                             elementData.AuditResults.Add(new AuditItem
                             {
                                 AuditType = "DUPLICADO",
-                                Estado = EstadoParametro.Vacio,
+                                Estado = EstadoParametro.Advertencia,
                                 Mensaje = "Advertencia: Tabla duplicada (mismo A.C., tipo y categoría).",
                                 ValorActual = elementData.Nombre,
                                 ValorCorregido = "N/A",

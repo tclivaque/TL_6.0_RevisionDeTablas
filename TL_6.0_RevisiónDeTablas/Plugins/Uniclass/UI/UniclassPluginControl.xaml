@@ -14,7 +14,7 @@
                 <DataTrigger Binding="{Binding Estado}" Value="Corregir">
                     <Setter Property="Foreground" Value="#0C5460"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Estado}" Value="Vacio">
+                <DataTrigger Binding="{Binding Estado}" Value="Advertencia">
                     <Setter Property="Foreground" Value="#856404"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Estado}" Value="Correcto">
@@ -98,8 +98,8 @@
             <Button Style="{StaticResource LegendButtonStyle}" Background="#D1ECF1" BorderBrush="#BEE5EB" Click="FilterButton_Click" Tag="Corregir">
                 <TextBlock x:Name="CorregirTextBlock" Text="🔧 A Corregir: 0" Foreground="#0C5460"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#FFF3CD" BorderBrush="#FFEEBA" Click="FilterButton_Click" Tag="Vacio">
-                <TextBlock x:Name="VacioTextBlock" Text="⚠ Advertencias: 0" Foreground="#856404"/>
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#FFF3CD" BorderBrush="#FFEEBA" Click="FilterButton_Click" Tag="Advertencia">
+                <TextBlock x:Name="AdvertenciaTextBlock" Text="⚠ Advertencias: 0" Foreground="#856404"/>
             </Button>
             <Button Style="{StaticResource LegendButtonStyle}" Background="#F8D7DA" BorderBrush="#F5C6CB" Click="FilterButton_Click" Tag="Error">
                 <TextBlock x:Name="ErrorTextBlock" Text="❌ Errores: 0" Foreground="#721C24"/>

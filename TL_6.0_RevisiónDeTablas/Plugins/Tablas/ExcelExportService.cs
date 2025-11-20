@@ -73,7 +73,7 @@ namespace TL60_AuditoriaUnificada.Services
         {
             switch (estado)
             {
-                case EstadoParametro.Vacio:
+                case EstadoParametro.Advertencia:
                     return "Advertencias";
                 case EstadoParametro.Correcto:
                     return "Correcto";

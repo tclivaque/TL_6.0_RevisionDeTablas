@@ -247,7 +247,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
             bool assemblyCodeCorrecto = valorPrincipal.Equals(assemblyCode, StringComparison.OrdinalIgnoreCase);
             if (!assemblyCodeCorrecto)
             {
-                item.Estado = EstadoParametro.Vacio;
+                item.Estado = EstadoParametro.Advertencia;
                 item.Mensaje = $"Advertencia: El valor del filtro AC ('{valorPrincipal}') no coincide con el del nombre ('{assemblyCode}').";
             }
             filtrosCorrectosInfo.Add(new ScheduleFilterInfo
@@ -500,7 +500,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
                 }
                 return item;
             }
-            item.Estado = EstadoParametro.Vacio;
+            item.Estado = EstadoParametro.Advertencia;
             item.Mensaje = $"Advertencia: Se esperaban 9 columnas visibles, pero se encontraron {actualHeadings.Count}.";
             item.ValorActual = $"Total: {actualHeadings.Count}\n" + string.Join("\n", actualHeadings);
             item.ValorCorregido = $"Total: {_expectedHeadingCount}\n" + string.Join("\n", dynamicExpectedHeadings);

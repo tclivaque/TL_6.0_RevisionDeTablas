@@ -18,6 +18,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
         private List<DiagnosticRow> _todasLasFilas;
         private List<ElementData> _elementosData;
         private string _filtroActual = "Total";
+        private readonly UniclassParameterWriterAsync _parameterWriterAsync;
 
         public UniclassPluginControl(UIDocument uidoc, List<ElementData> elementosData)
         {
@@ -26,6 +27,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             _doc = uidoc.Document;
             _elementosData = elementosData ?? new List<ElementData>();
             _todasLasFilas = new List<DiagnosticRow>();
+            _parameterWriterAsync = new UniclassParameterWriterAsync();
 
             CargarDatos();
         }
@@ -55,13 +57,13 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
         {
             int total = _todasLasFilas.Count;
             int corregir = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Corregir);
-            int vacio = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Vacio);
+            int advertencia = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Advertencia);
             int error = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Error);
             int correcto = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Correcto);
 
             TotalTextBlock.Text = $"Total: {total}";
             CorregirTextBlock.Text = $"🔧 A Corregir: {corregir}";
-            VacioTextBlock.Text = $"⚠ Advertencias: {vacio}";
+            AdvertenciaTextBlock.Text = $"⚠ Advertencias: {advertencia}";
             ErrorTextBlock.Text = $"❌ Errores: {error}";
             CorrectoTextBlock.Text = $"✓ Correctos: {correcto}";
 
@@ -90,8 +92,8 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
                 case "Corregir":
                     filasFiltradas = _todasLasFilas.Where(r => r.Estado == EstadoParametro.Corregir).ToList();
                     break;
-                case "Vacio":
-                    filasFiltradas = _todasLasFilas.Where(r => r.Estado == EstadoParametro.Vacio).ToList();
+                case "Advertencia":
+                    filasFiltradas = _todasLasFilas.Where(r => r.Estado == EstadoParametro.Advertencia).ToList();
                     break;
                 case "Error":
                     filasFiltradas = _todasLasFilas.Where(r => r.Estado == EstadoParametro.Error).ToList();
@@ -154,9 +156,8 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
                 if (result != MessageBoxResult.Yes)
                     return;
 
-                // Ejecutar corrección
-                var writer = new UniclassParameterWriter(_doc);
-                var processingResult = writer.UpdateParameters(_elementosData);
+                // Ejecutar corrección usando ExternalEvent (evita error de transacción desde UI)
+                var processingResult = _parameterWriterAsync.UpdateParametersAsync(_doc, _elementosData);
 
                 // Mostrar resultado
                 if (processingResult.Exitoso)

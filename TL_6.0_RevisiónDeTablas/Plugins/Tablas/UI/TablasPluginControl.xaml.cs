@@ -43,13 +43,13 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas.UI
         {
             int total = _originalDiagnosticRows.Count;
             int correctos = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Correcto);
-            int vacios = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Vacio);
+            int advertencias = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Advertencia);
             int aCorregir = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Corregir);
             int errores = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Error);
 
             TotalTextBlock.Text = $"Total: {total}";
             CorregirTextBlock.Text = $"🔧 A Corregir: {aCorregir}";
-            VacioTextBlock.Text = $"⚠ Advertencias: {vacios}";
+            AdvertenciaTextBlock.Text = $"⚠ Advertencias: {advertencias}";
             ErrorTextBlock.Text = $"❌ Errores: {errores}";
             CorrectoTextBlock.Text = $"✅ Correctos: {correctos}";
 
@@ -69,8 +69,8 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas.UI
                 case "Correcto":
                     _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Correcto).ToList();
                     break;
-                case "Vacio":
-                    _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Vacio).ToList();
+                case "Advertencia":
+                    _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Advertencia).ToList();
                     break;
                 case "Corregir":
                     _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Corregir).ToList();

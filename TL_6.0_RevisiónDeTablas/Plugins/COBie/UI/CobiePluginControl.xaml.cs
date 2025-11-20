@@ -56,13 +56,13 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.UI
         {
             int total = _originalDiagnosticRows.Count;
             int correctos = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Correcto);
-            int vacios = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Vacio);
+            int advertencias = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Advertencia);
             int aCorregir = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Corregir);
             int errores = _originalDiagnosticRows.Count(r => r.Estado == EstadoParametro.Error);
 
             TotalTextBlock.Text = $"Total: {total}";
             CorregirTextBlock.Text = $"🔧 A Corregir: {aCorregir}";
-            VacioTextBlock.Text = $"⚠ Vacío: {vacios}";
+            AdvertenciaTextBlock.Text = $"⚠ Advertencias: {advertencias}";
             ErrorTextBlock.Text = $"❌ Error: {errores}";
             CorrectoTextBlock.Text = $"✓ Correcto: {correctos}";
 
@@ -137,7 +137,7 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.UI
             switch (filterTag)
             {
                 case "Correcto": _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Correcto).ToList(); break;
-                case "Vacio": _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Vacio).ToList(); break;
+                case "Advertencia": _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Advertencia).ToList(); break;
                 case "Corregir": _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Corregir).ToList(); break;
                 case "Error": _diagnosticRows = _originalDiagnosticRows.Where(r => r.Estado == EstadoParametro.Error).ToList(); break;
                 case "Total": default: _diagnosticRows = _originalDiagnosticRows; break;

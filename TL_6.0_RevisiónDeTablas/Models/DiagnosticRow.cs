@@ -44,13 +44,19 @@ namespace TL60_AuditoriaUnificada.Models
     }
 
     /// <summary>
-    /// Estados posibles de un parámetro
+    /// Estados posibles de un parámetro durante la auditoría
+    ///
+    /// Criterios unificados para todos los plugins:
+    /// - Correcto: Información validada como correcta
+    /// - Advertencia: Incompatibilidades que NO se pueden corregir automáticamente (requieren revisión manual)
+    /// - Corregir: Incompatibilidades que SÍ se pueden corregir automáticamente con el plugin
+    /// - Error: Errores de ejecución, lectura de datos, Assembly Codes no encontrados, valores correctos vacíos, etc.
     /// </summary>
     public enum EstadoParametro
     {
-        Correcto,   // Verde
-        Vacio,      // Naranja
-        Corregir,   // Azul
-        Error       // Rojo
+        Correcto,      // Verde - Información validada como correcta
+        Advertencia,   // Amarillo - Incompatibilidades NO corregibles (requieren revisión manual)
+        Corregir,      // Azul - Incompatibilidades SÍ corregibles automáticamente
+        Error          // Rojo - Errores de ejecución, lectura, AC no encontrados, valores correctos vacíos
     }
 }

@@ -143,6 +143,7 @@
     <Compile Include="Plugins\Uniclass\Commands\UniclassCommand.cs" />
     <Compile Include="Plugins\Uniclass\Services\UniclassAuditService.cs" />
     <Compile Include="Plugins\Uniclass\Services\UniclassParameterWriter.cs" />
+    <Compile Include="Plugins\Uniclass\Services\UniclassParameterWriterHandler.cs" />
     <Compile Include="Plugins\Uniclass\Services\UniclassDataBuilder.cs" />
     <Compile Include="Plugins\Uniclass\UI\UniclassPluginControl.xaml.cs">
       <DependentUpon>UniclassPluginControl.xaml</DependentUpon>

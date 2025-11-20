@@ -118,7 +118,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
                     report.AuditResults.Add(new AuditItem
                     {
                         AuditType = "TABLA FALTANTE",
-                        Estado = EstadoParametro.Vacio, // Advertencia
+                        Estado = EstadoParametro.Advertencia, // Advertencia - No corregible automáticamente
                         Mensaje = $"No se encontró tabla para el AC: '{missingCode}' (detectado en el modelo: '{rvtName}')",
                         ValorActual = "No existe",
                         ValorCorregido = $"Crear tabla para {missingCode}",

@@ -92,7 +92,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
             {
                 case EstadoParametro.Correcto:
                     return MediaColor.FromRgb(212, 237, 218); // Verde claro
-                case EstadoParametro.Vacio:
+                case EstadoParametro.Advertencia:
                     return MediaColor.FromRgb(255, 243, 205); // Amarillo claro
                 case EstadoParametro.Corregir:
                     return MediaColor.FromRgb(209, 236, 241); // Azul claro
@@ -116,7 +116,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas
             switch (estado)
             {
                 case EstadoParametro.Corregir: return 1;
-                case EstadoParametro.Vacio: return 2;
+                case EstadoParametro.Advertencia: return 2;
                 case EstadoParametro.Error: return 3;
                 case EstadoParametro.Correcto: return 4;
                 default: return 99;
