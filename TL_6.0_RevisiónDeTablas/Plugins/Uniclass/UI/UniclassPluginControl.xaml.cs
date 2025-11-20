@@ -49,8 +49,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al cargar datos de Uniclass:\n\n{ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                TaskDialog.Show("Error de Carga", $"Error al cargar datos de Uniclass:\n\n{ex.Message}");
             }
         }
 
@@ -128,8 +127,23 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"No se pudo mostrar el elemento:\n\n{ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                TaskDialog.Show("Error", $"No se pudo mostrar el elemento:\n\n{ex.Message}");
+            }
+        }
+
+        private void HeaderCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _todasLasFilas)
+            {
+                row.IsChecked = true;
+            }
+        }
+
+        private void HeaderCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _todasLasFilas)
+            {
+                row.IsChecked = false;
             }
         }
 
@@ -137,19 +151,15 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
         {
             try
             {
-                // Contar elementos a corregir
-                int parametrosACorregir = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Corregir);
+                // Contar elementos marcados para corregir
+                int parametrosMarcados = _todasLasFilas.Count(r => r.IsChecked && r.Estado == EstadoParametro.Corregir);
 
-                if (parametrosACorregir == 0)
-                {
-                    MessageBox.Show("No hay parámetros para corregir.",
-                        "Información", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (parametrosMarcados == 0)
                     return;
-                }
 
                 // Confirmación
                 var result = MessageBox.Show(
-                    $"Se corregirán {parametrosACorregir} parámetros Uniclass.\n\n¿Desea continuar?",
+                    $"Se corregirán {parametrosMarcados} parámetros Uniclass marcados.\n\n¿Desea continuar?",
                     "Confirmar Corrección",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
@@ -157,36 +167,34 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
                 if (result != MessageBoxResult.Yes)
                     return;
 
+                // Filtrar solo los elementos marcados para corregir
+                var filasSeleccionadas = _todasLasFilas.Where(r => r.IsChecked && r.Estado == EstadoParametro.Corregir).ToList();
+                var elementosACorregir = _elementosData.Where(ed =>
+                    filasSeleccionadas.Any(r => r.ElementId == ed.ElementId)).ToList();
+
                 // Deshabilitar botón durante la corrección
                 CorregirButton.IsEnabled = false;
 
                 // Ejecutar corrección en thread secundario (evita congelar UI)
                 var processingResult = await Task.Run(() =>
-                    _parameterWriterAsync.UpdateParametersAsync(_doc, _elementosData));
+                    _parameterWriterAsync.UpdateParametersAsync(_doc, elementosACorregir));
 
-                // Mostrar resultado
-                if (processingResult.Exitoso)
+                // Solo mostrar errores
+                if (!processingResult.Exitoso)
                 {
-                    MessageBox.Show(processingResult.Mensaje,
-                        "Corrección Exitosa",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-
-                    // Recargar datos
-                    RecargarDatos();
-                }
-                else
-                {
-                    MessageBox.Show($"Se encontraron errores durante la corrección:\n\n{processingResult.Mensaje}",
-                        "Errores en Corrección",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
+                    TaskDialog errorDialog = new TaskDialog("Error en Corrección")
+                    {
+                        MainInstruction = "No se pudieron corregir todos los parámetros",
+                        MainContent = processingResult.Mensaje ?? "Error desconocido.",
+                        ExpandedContent = processingResult.Errores.Any() ?
+                            string.Join("\n", processingResult.Errores) : string.Empty
+                    };
+                    errorDialog.Show();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error al corregir parámetros:\n\n{ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                TaskDialog.Show("Error", $"Error al corregir parámetros:\n\n{ex.Message}");
             }
             finally
             {
@@ -195,24 +203,5 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             }
         }
 
-        private void RecargarDatos()
-        {
-            try
-            {
-                // Nota: Después de corregir, necesitamos volver a procesar los elementos
-                // porque los valores actuales han cambiado
-                MessageBox.Show(
-                    "Los parámetros han sido corregidos exitosamente.\n\n" +
-                    "Por favor, cierre y vuelva a abrir la ventana de auditoría para ver los cambios.",
-                    "Recarga Requerida",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error al recargar datos:\n\n{ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
     }
 }

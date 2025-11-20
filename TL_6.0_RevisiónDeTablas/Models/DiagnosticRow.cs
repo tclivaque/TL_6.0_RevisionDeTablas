@@ -1,4 +1,5 @@
 ﻿// Models/DiagnosticRow.cs
+using System.ComponentModel;
 using System.Windows.Media;
 using Autodesk.Revit.DB;
 
@@ -8,12 +9,32 @@ namespace TL60_AuditoriaUnificada.Models
     /// Modelo para una fila del diagnóstico (tabla de la ventana).
     /// Soporta tanto plugin Tablas como plugin COBie.
     /// </summary>
-    public class DiagnosticRow
+    public class DiagnosticRow : INotifyPropertyChanged
     {
+        private bool _isChecked;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
         public int NumeroFila { get; set; }
         public bool EsSeleccionable { get; set; }
         public ElementId ElementId { get; set; }
         public string IdMostrar { get; set; }
+
+        /// <summary>
+        /// Indica si la fila está marcada para corrección
+        /// </summary>
+        public bool IsChecked
+        {
+            get => _isChecked;
+            set
+            {
+                if (_isChecked != value)
+                {
+                    _isChecked = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChecked)));
+                }
+            }
+        }
 
         /// <summary>
         /// Grupo para agrupar filas: "UNIDADES GLOBALES" o "TABLAS"

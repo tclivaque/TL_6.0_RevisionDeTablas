@@ -85,25 +85,40 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.UI
             catch { }
         }
 
+        private void HeaderCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _originalDiagnosticRows)
+            {
+                row.IsChecked = true;
+            }
+        }
+
+        private void HeaderCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _originalDiagnosticRows)
+            {
+                row.IsChecked = false;
+            }
+        }
+
         private async void CorregirButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
+                // Filtrar solo elementos marcados
+                var filasSeleccionadas = _originalDiagnosticRows.Where(r => r.IsChecked && r.Estado == EstadoParametro.Corregir).ToList();
+                var elementosACorregir = _elementosData.Where(ed =>
+                    filasSeleccionadas.Any(r => r.ElementId == ed.ElementId) && ed.ParametrosActualizar.Any()).ToList();
+
+                if (!elementosACorregir.Any())
+                    return;
+
                 CorregirButton.IsEnabled = false;
                 CorregirButton.Content = "Corrigiendo...";
                 var writerAsync = _writerAsync;
                 var doc = _doc;
-                var dataToUpdate = _elementosData.Where(ed => ed.ParametrosActualizar.Any()).ToList();
 
-                if (!dataToUpdate.Any())
-                {
-                    TaskDialog.Show("Información", "No hay parámetros marcados para corregir.", TaskDialogCommonButtons.Close);
-                    CorregirButton.IsEnabled = true;
-                    CorregirButton.Content = "Corregir";
-                    return;
-                }
-
-                ProcessingResult writeResult = await Task.Run(() => writerAsync.WriteParametersAsync(doc, dataToUpdate));
+                ProcessingResult writeResult = await Task.Run(() => writerAsync.WriteParametersAsync(doc, elementosACorregir));
 
                 if (!writeResult.Exitoso)
                 {
@@ -114,12 +129,8 @@ namespace TL60_AuditoriaUnificada.Plugins.COBie.UI
                         ExpandedContent = writeResult.Errores.Any() ? string.Join("\n", writeResult.Errores) : string.Empty
                     };
                     errorDialog.Show();
-                    CorregirButton.IsEnabled = true;
-                    CorregirButton.Content = "Corregir";
-                    return;
                 }
 
-                TaskDialog.Show("Éxito", "Los parámetros se han corregido correctamente.");
                 CorregirButton.IsEnabled = true;
                 CorregirButton.Content = "Corregir";
             }

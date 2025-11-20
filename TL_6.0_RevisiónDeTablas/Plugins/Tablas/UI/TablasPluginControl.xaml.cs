@@ -88,43 +88,61 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas.UI
             DiagnosticDataGrid.ItemsSource = _diagnosticRows;
         }
 
-        // --- MÉTODO DE CORRECIÓN (Ya corregido en la respuesta anterior) ---
+        private void HeaderCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _originalDiagnosticRows)
+            {
+                row.IsChecked = true;
+            }
+        }
+
+        private void HeaderCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            foreach (var row in _originalDiagnosticRows)
+            {
+                row.IsChecked = false;
+            }
+        }
+
         private async void CorregirButton_Click(object sender, RoutedEventArgs e)
         {
-            CorregirButton.IsEnabled = false;
-            ExportarButton.IsEnabled = false;
-
             try
             {
+                // Filtrar solo elementos marcados
+                var filasSeleccionadas = _originalDiagnosticRows.Where(r => r.IsChecked && r.Estado == EstadoParametro.Corregir).ToList();
+                var elementosACorregir = _elementosData.Where(ed =>
+                    filasSeleccionadas.Any(r => r.ElementId == ed.ElementId)).ToList();
+
+                if (!elementosACorregir.Any())
+                    return;
+
+                CorregirButton.IsEnabled = false;
+                ExportarButton.IsEnabled = false;
+
                 ProcessingResult writeResult = await Task.Run(() =>
                 {
-                    // Llamar al handler con la lista COMPLETA
-                    return _writerAsync.UpdateSchedulesAsync(_doc, _elementosData);
+                    return _writerAsync.UpdateSchedulesAsync(_doc, elementosACorregir);
                 });
 
-                // Mostrar el resultado combinado
-                bool huboErrores = !writeResult.Exitoso;
-                string mensaje = writeResult.Mensaje;
-
-                if (huboErrores && writeResult.Errores.Count > 0)
+                // Solo mostrar errores
+                if (!writeResult.Exitoso)
                 {
-                    mensaje += "\n\nErrores:\n" + string.Join("\n", writeResult.Errores.Take(10));
+                    TaskDialog errorDialog = new TaskDialog("Error en Corrección")
+                    {
+                        MainInstruction = "No se pudieron corregir todos los elementos",
+                        MainContent = writeResult.Mensaje ?? "Error desconocido.",
+                        ExpandedContent = writeResult.Errores.Any() ?
+                            string.Join("\n", writeResult.Errores.Take(10)) : string.Empty
+                    };
+                    errorDialog.Show();
                 }
 
-                if (string.IsNullOrWhiteSpace(mensaje))
-                {
-                    mensaje = "No se encontraron elementos para corregir.";
-                }
-
-                MessageBox.Show(mensaje, "Resultado de Corrección", MessageBoxButton.OK,
-                    huboErrores ? MessageBoxImage.Error : MessageBoxImage.Information);
+                CorregirButton.IsEnabled = true;
+                ExportarButton.IsEnabled = true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error durante la corrección:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
+                TaskDialog.Show("Error", $"Error durante la corrección:\n{ex.Message}");
                 CorregirButton.IsEnabled = true;
                 ExportarButton.IsEnabled = true;
             }
@@ -145,12 +163,10 @@ namespace TL60_AuditoriaUnificada.Plugins.Tablas.UI
                     var exportService = new ExcelExportService();
                     byte[] fileBytes = exportService.ExportToExcel(_diagnosticRows);
                     File.WriteAllBytes(dialog.FileName, fileBytes);
-
-                    MessageBox.Show($"Reporte exportado exitosamente a:\n{dialog.FileName}", "Exportación Completa", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al exportar el archivo: {ex.Message}", "Error de Exportación", MessageBoxButton.OK, MessageBoxImage.Error);
+                    TaskDialog.Show("Error de Exportación", $"Error al exportar el archivo: {ex.Message}");
                 }
             }
         }
