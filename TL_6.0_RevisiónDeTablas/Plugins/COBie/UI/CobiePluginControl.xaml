@@ -51,9 +51,11 @@
         </Style>
 
         <Style x:Key="LegendButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#BDC3C7"/>
+            <Setter Property="BorderBrush" Value="#95A5A6"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="15,8"/>
-            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="Margin" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -64,7 +66,7 @@
                         <Border Background="{TemplateBinding Background}"
                                  BorderBrush="{TemplateBinding BorderBrush}"
                                  BorderThickness="{TemplateBinding BorderThickness}"
-                                 CornerRadius="4"
+                                 CornerRadius="3"
                                  Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -73,9 +75,45 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Opacity" Value="0.8"/>
+                    <Setter Property="Background" Value="#FFFFFF"/>
                 </Trigger>
             </Style.Triggers>
+        </Style>
+
+        <Style x:Key="CenteredHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+
+        <Style x:Key="RoundedCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border Background="White"
+                                BorderBrush="#BDC3C7"
+                                BorderThickness="1"
+                                CornerRadius="3"
+                                Width="18"
+                                Height="18"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                            <Path x:Name="CheckMark"
+                                  Data="M 0,4 L 3,7 L 8,0"
+                                  Stroke="#28A745"
+                                  StrokeThickness="2"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Margin="0,-1,0,0"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
     </UserControl.Resources>
@@ -91,20 +129,20 @@
         <TextBlock Grid.Row="0" Text="Auditoría de Parámetros COBie" FontSize="24" FontWeight="Bold" Foreground="#2C3E50" HorizontalAlignment="Center" Margin="0,0,0,20"/>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#EAECEE" BorderBrush="#BDC3C7" Click="FilterButton_Click" Tag="Total">
+            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Total">
                 <TextBlock x:Name="TotalTextBlock" Text="Total: 0" Foreground="#34495E"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#D1ECF1" BorderBrush="#BEE5EB" Click="FilterButton_Click" Tag="Corregir">
-                <TextBlock x:Name="CorregirTextBlock" Text="🔧 A Corregir: 0" Foreground="#0C5460"/>
+            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Corregir">
+                <TextBlock x:Name="CorregirTextBlock" Text="🔧 Corregir: 0" Foreground="#0C5460"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#FFF3CD" BorderBrush="#FFEEBA" Click="FilterButton_Click" Tag="Advertencia">
+            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Advertencia">
                 <TextBlock x:Name="AdvertenciaTextBlock" Text="⚠ Advertencias: 0" Foreground="#856404"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#F8D7DA" BorderBrush="#F5C6CB" Click="FilterButton_Click" Tag="Error">
-                <TextBlock x:Name="ErrorTextBlock" Text="❌ Error: 0" Foreground="#721C24"/>
+            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Error">
+                <TextBlock x:Name="ErrorTextBlock" Text="❌ Errores: 0" Foreground="#721C24"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Background="#D4EDDA" BorderBrush="#C3E6CB" Click="FilterButton_Click" Tag="Correcto">
-                <TextBlock x:Name="CorrectoTextBlock" Text="✓ Correcto: 0" Foreground="#155724"/>
+            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Correcto">
+                <TextBlock x:Name="CorrectoTextBlock" Text="✓ Correctos: 0" Foreground="#155724"/>
             </Button>
         </StackPanel>
 
@@ -115,28 +153,29 @@
                       ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
                     <!-- Columna de Checkbox -->
-                    <DataGridTemplateColumn Width="40">
+                    <DataGridTemplateColumn Width="40" HeaderStyle="{StaticResource CenteredHeaderStyle}">
                         <DataGridTemplateColumn.HeaderTemplate>
                             <DataTemplate>
-                                <CheckBox x:Name="HeaderCheckBox" HorizontalAlignment="Center"
+                                <CheckBox Style="{StaticResource RoundedCheckBoxStyle}" x:Name="HeaderCheckBox"
                                           Checked="HeaderCheckBox_Checked" Unchecked="HeaderCheckBox_Unchecked"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.HeaderTemplate>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                          HorizontalAlignment="Center"/>
+                                <CheckBox Style="{StaticResource RoundedCheckBoxStyle}"
+                                          IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          Checked="RowCheckBox_Checked" Unchecked="RowCheckBox_Unchecked"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="ABRIR" Width="50">
+                    <DataGridTemplateColumn Header="ABRIR" Width="50" HeaderStyle="{StaticResource CenteredHeaderStyle}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Button Content="👁️" Style="{StaticResource ShowButtonStyle}" IsEnabled="{Binding EsSeleccionable}" Click="MostrarButton_Click" Tag="{Binding}"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="#" Binding="{Binding NumeroFila}" Width="50" IsReadOnly="True">
+                    <DataGridTextColumn Header="#" Binding="{Binding NumeroFila}" Width="50" IsReadOnly="True" HeaderStyle="{StaticResource CenteredHeaderStyle}">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -144,19 +183,40 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80"/>
-                    <DataGridTextColumn Header="GRUPO" Binding="{Binding GrupoCOBie}" Width="100"/>
-                    <DataGridTextColumn Header="ASSEMBLY CODE" Binding="{Binding AssemblyCode}" Width="120"/>
-                    <DataGridTextColumn Header="DESCRIPCIÓN" Binding="{Binding Descripcion}" Width="200"/>
-                    <DataGridTextColumn Header="PARÁMETRO" Binding="{Binding NombreParametro}" Width="250"/>
-                    <DataGridTextColumn Header="VALOR ACTUAL" Binding="{Binding ValorActual}" Width="250"/>
-                    <DataGridTextColumn Header="VALOR CORRECTO" Binding="{Binding ValorCorregido}" Width="250"/>
-                    <DataGridTextColumn Header="MENSAJE" Binding="{Binding Mensaje}" Width="*"/>
+                    <DataGridTextColumn Header="ID" Binding="{Binding IdMostrar}" Width="80" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="GRUPO" Binding="{Binding GrupoCOBie}" Width="100" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="ASSEMBLY CODE" Binding="{Binding AssemblyCode}" Width="120" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="DESCRIPCIÓN" Binding="{Binding Descripcion}" Width="200" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="PARÁMETRO" Binding="{Binding NombreParametro}" Width="250" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="VALOR ACTUAL" Binding="{Binding ValorActual}" Width="250" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="VALOR CORRECTO" Binding="{Binding ValorCorregido}" Width="250" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
+                    <DataGridTextColumn Header="MENSAJE" Binding="{Binding Mensaje}" Width="*" HeaderStyle="{StaticResource CenteredHeaderStyle}"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
+            <Button x:Name="ExportarButton" Content="Exportar a Excel" Width="150" Height="40" Margin="10,0" FontSize="14" FontWeight="SemiBold"
+                    Background="#4E529C" Foreground="White" BorderThickness="0" Cursor="Hand" Click="ExportarButton_Click">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="10">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#3D4078"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
             <Button x:Name="CorregirButton" Content="Corregir" Width="120" Height="40" Margin="10,0" FontSize="14" FontWeight="SemiBold"
                     Background="#28A745" Foreground="White" BorderThickness="0" Cursor="Hand" Click="CorregirButton_Click">
                 <Button.Style>
@@ -178,27 +238,6 @@
                                 <Setter Property="Background" Value="#BDC3C7"/>
                                 <Setter Property="Opacity" Value="0.7"/>
                                 <Setter Property="Cursor" Value="No"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Button.Style>
-            </Button>
-            <Button x:Name="ExportarButton" Content="Exportar a Excel" Width="150" Height="40" Margin="10,0" FontSize="14" FontWeight="SemiBold"
-                    Background="#4E529C" Foreground="White" BorderThickness="0" Cursor="Hand" Click="ExportarButton_Click">
-                <Button.Style>
-                    <Style TargetType="Button">
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="Button">
-                                    <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="10">
-                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#0056B3"/>
                             </Trigger>
                         </Style.Triggers>
                     </Style>

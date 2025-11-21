@@ -64,7 +64,7 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             int correcto = _todasLasFilas.Count(r => r.Estado == EstadoParametro.Correcto);
 
             TotalTextBlock.Text = $"Total: {total}";
-            CorregirTextBlock.Text = $"🔧 A Corregir: {corregir}";
+            CorregirTextBlock.Text = $"🔧 Corregir: {corregir}";
             AdvertenciaTextBlock.Text = $"⚠ Advertencias: {advertencia}";
             ErrorTextBlock.Text = $"❌ Errores: {error}";
             CorrectoTextBlock.Text = $"✓ Correctos: {correcto}";
@@ -146,6 +146,36 @@ namespace TL60_AuditoriaUnificada.Plugins.Uniclass.UI
             foreach (var row in _todasLasFilas)
             {
                 row.IsChecked = false;
+            }
+        }
+
+        private void RowCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            // Si hay múltiples filas seleccionadas, marcar todas
+            if (DiagnosticDataGrid.SelectedItems.Count > 1)
+            {
+                foreach (var item in DiagnosticDataGrid.SelectedItems)
+                {
+                    if (item is DiagnosticRow row)
+                    {
+                        row.IsChecked = true;
+                    }
+                }
+            }
+        }
+
+        private void RowCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            // Si hay múltiples filas seleccionadas, desmarcar todas
+            if (DiagnosticDataGrid.SelectedItems.Count > 1)
+            {
+                foreach (var item in DiagnosticDataGrid.SelectedItems)
+                {
+                    if (item is DiagnosticRow row)
+                    {
+                        row.IsChecked = false;
+                    }
+                }
             }
         }
 
