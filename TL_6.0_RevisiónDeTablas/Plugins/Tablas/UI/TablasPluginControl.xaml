@@ -49,22 +49,19 @@
             </Style.Triggers>
         </Style>
         <Style x:Key="LegendButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#BDC3C7"/>
-            <Setter Property="BorderBrush" Value="#95A5A6"/>
-            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="15,8"/>
-            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3"
+                                CornerRadius="4"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -73,7 +70,7 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FFFFFF"/>
+                    <Setter Property="Opacity" Value="0.8"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -128,19 +125,19 @@
                    HorizontalAlignment="Center" Margin="0,0,0,20"/>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Total">
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#EAECEE" BorderBrush="#BDC3C7" Click="FilterButton_Click" Tag="Total">
                 <TextBlock x:Name="TotalTextBlock" Text="Total: 0" Foreground="#34495E"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Corregir">
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#D1ECF1" BorderBrush="#BEE5EB" Click="FilterButton_Click" Tag="Corregir">
                 <TextBlock x:Name="CorregirTextBlock" Text="🔧 Corregir: 0" Foreground="#0C5460"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Advertencia">
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#FFF3CD" BorderBrush="#FFEEBA" Click="FilterButton_Click" Tag="Advertencia">
                 <TextBlock x:Name="AdvertenciaTextBlock" Text="⚠ Advertencias: 0" Foreground="#856404"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Error">
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#F8D7DA" BorderBrush="#F5C6CB" Click="FilterButton_Click" Tag="Error">
                 <TextBlock x:Name="ErrorTextBlock" Text="❌ Errores: 0" Foreground="#721C24"/>
             </Button>
-            <Button Style="{StaticResource LegendButtonStyle}" Click="FilterButton_Click" Tag="Correcto">
+            <Button Style="{StaticResource LegendButtonStyle}" Background="#D4EDDA" BorderBrush="#C3E6CB" Click="FilterButton_Click" Tag="Correcto">
                 <TextBlock x:Name="CorrectoTextBlock" Text="✓ Correctos: 0" Foreground="#155724"/>
             </Button>
         </StackPanel>
